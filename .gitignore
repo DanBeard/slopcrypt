@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+
+# Models (large files)
+*.gguf
+
+# Test/temp files
+*.bin
+*.txt
+!README.md
+
+# IDE
+.vscode/
+.idea/
+
+# Claude Code
+.claude/
