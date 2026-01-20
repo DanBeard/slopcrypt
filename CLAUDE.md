@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-LLM steganography tool that hides binary data in LLM-generated text using Base-K encoding. Each token encodes `log2(K)` bits by selecting from the top-K most probable tokens. Includes encrypted secret management, Huffman compression, and payload encryption.
+SlopCrypt - LLM steganography tool that hides binary data in LLM-generated text using Base-K encoding. Each token encodes `log2(K)` bits by selecting from the top-K most probable tokens. Includes encrypted secret management, Huffman compression, and payload encryption.
 
 ## Commands
 

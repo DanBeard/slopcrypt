@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Encrypted Secret Wrapper for LLM Steganography
+SlopCrypt - Encrypted Secret Wrapper for LLM Steganography
 
 Wraps stego_basek.py with:
 - Encrypted out-of-band secret blob (base64 msgpack)
@@ -854,7 +854,7 @@ def cmd_show_secret(args):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Encrypted Secret Wrapper for LLM Steganography",
+        description="SlopCrypt - Encrypted Secret Wrapper for LLM Steganography",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:

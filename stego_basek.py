@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Base-K LLM Steganography
+SlopCrypt - Base-K LLM Steganography
 
 Simple approach: map each log2(K) bits to one of the top-K tokens.
 Much simpler than arithmetic coding, very robust.
@@ -476,7 +476,7 @@ def decode_with_knock(
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Base-K LLM Steganography - Simple and robust",
+        description="SlopCrypt - Base-K LLM Steganography",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:

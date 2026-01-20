@@ -1,6 +1,6 @@
-# LLM Steganography
+# SlopCrypt
 
-Hide binary data in LLM-generated text using Base-K encoding with encrypted secrets.
+Hide binary data in LLM-generated text using Base-K steganography with encrypted secrets.
 
 ## Features
 
