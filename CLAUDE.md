@@ -33,7 +33,7 @@ echo "test" | python stego_basek.py encode --mock --knock 4,7,2,9 --preamble 10 
 
 **`stego_basek.py`** — Low-level encode/decode, for when you want to suffer
 
-**`lm_client.py`** — LLM backends: `MockLMClient`, `LlamaCppClient`, `LMClient`
+**`lm_client.py`** — LLM backends: `MockLMClient`, `LlamaCppClient`, `LMClient`, `MLXClient`
 
 **`utils.py`** — Bit wrangling, token filtering, knock utilities
 

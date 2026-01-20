@@ -693,6 +693,13 @@ def create_client(args):
     """Create LLM client based on args."""
     if args.mock:
         return MockLMClient(vocab_size=max(32, 16))
+    elif getattr(args, "mlx", False):
+        if not args.mlx_model:
+            print("--mlx-model required (e.g., mlx-community/Llama-3.2-1B-Instruct-4bit)", file=sys.stderr)
+            sys.exit(1)
+        from lm_client import MLXClient
+
+        return MLXClient(model_name=args.mlx_model, top_k=64)
     elif args.lmstudio:
         if not args.model:
             print("--model required for LM Studio", file=sys.stderr)
@@ -701,7 +708,7 @@ def create_client(args):
         return LMClient(config)
     else:
         if not args.model_path:
-            print("Model path required. Use --model-path, --lmstudio, or --mock", file=sys.stderr)
+            print("Model path required. Use --model-path, --mlx, --lmstudio, or --mock", file=sys.stderr)
             sys.exit(1)
         return LlamaCppClient(model_path=args.model_path, top_k=64)
 
@@ -921,6 +928,10 @@ Examples:
     enc_parser.add_argument("--host", default="http://192.168.1.12:1234/v1", help="LM Studio URL")
     enc_parser.add_argument("--model", help="Model name for LM Studio")
     enc_parser.add_argument("--mock", action="store_true", help="Use mock client (testing)")
+    enc_parser.add_argument("--mlx", action="store_true", help="Use MLX (Apple Silicon)")
+    enc_parser.add_argument(
+        "--mlx-model", help="MLX model name (e.g., mlx-community/Llama-3.2-1B-Instruct-4bit)"
+    )
 
     # decode
     dec_parser = subparsers.add_parser("decode", help="Decode message")
@@ -936,6 +947,10 @@ Examples:
     dec_parser.add_argument("--host", default="http://192.168.1.12:1234/v1", help="LM Studio URL")
     dec_parser.add_argument("--model", help="Model name for LM Studio")
     dec_parser.add_argument("--mock", action="store_true", help="Use mock client (testing)")
+    dec_parser.add_argument("--mlx", action="store_true", help="Use MLX (Apple Silicon)")
+    dec_parser.add_argument(
+        "--mlx-model", help="MLX model name (e.g., mlx-community/Llama-3.2-1B-Instruct-4bit)"
+    )
 
     # show-secret
     show_parser = subparsers.add_parser("show-secret", help="Show secret parameters")

@@ -330,6 +330,96 @@ class LMClient:
             ) from e
 
 
+class MLXClient:
+    """
+    Client using MLX for Apple Silicon inference.
+
+    Uses mlx-lm's direct API to get full vocabulary logprobs,
+    which is required for K>10 (server API limits to 10 tokens).
+    """
+
+    def __init__(
+        self,
+        model_name: str,
+        top_k: int = 40,
+        seed: int = 42,
+    ):
+        """
+        Initialize MLX client.
+
+        Args:
+            model_name: HuggingFace model name (e.g., mlx-community/Llama-3.2-1B-Instruct-4bit)
+            top_k: Number of top tokens to return
+            seed: Random seed for reproducibility
+        """
+        try:
+            from mlx_lm import load, stream_generate
+            import mlx.core as mx
+        except ImportError as e:
+            raise ImportError(
+                "mlx-lm not installed. Install with: pip install mlx-lm\n"
+                "Note: MLX only works on Apple Silicon Macs."
+            ) from e
+
+        self._mx = mx
+        self._stream_generate = stream_generate
+        self.model, self.tokenizer = load(model_name)
+        self.top_k = top_k
+        mx.random.seed(seed)
+        self._special_ids = set(getattr(self.tokenizer, "all_special_ids", []))
+
+    def get_token_distribution(self, context: str) -> list["TokenProb"]:
+        """
+        Get probability distribution over next tokens.
+
+        Args:
+            context: The text context
+
+        Returns:
+            List of TokenProb with token and probability pairs
+        """
+        mx = self._mx
+        prompt_tokens = self.tokenizer.encode(context)
+
+        # Get one generation step for logprobs
+        for response in self._stream_generate(
+            self.model, self.tokenizer, mx.array(prompt_tokens), max_tokens=1
+        ):
+            logprobs = response.logprobs
+            break
+        else:
+            return []
+
+        # Top-K indices descending by logprob
+        top_k_indices = mx.argsort(logprobs)[-self.top_k :][::-1]
+
+        result = []
+        for idx in top_k_indices:
+            idx_int = int(idx)
+            if idx_int in self._special_ids:
+                continue
+            token_str = self.tokenizer.decode([idx_int])
+            if not token_str:
+                continue
+            prob = float(mx.exp(logprobs[idx_int]))
+            result.append(TokenProb(token=token_str, prob=prob))
+
+        # Sort by probability descending, then by token string for stability
+        result.sort(key=lambda x: (-x.prob, x.token))
+        return result
+
+    def close(self):
+        """Release model resources."""
+        if hasattr(self, "model"):
+            del self.model
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        self.close()
+
+
 class MockLMClient:
     """
     Mock LM client for testing without LM Studio.

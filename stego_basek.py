@@ -548,6 +548,10 @@ Examples:
         "--model", default=None, help="Model name for LM Studio (e.g., qwen/qwen3-14b)"
     )
     parser.add_argument("--mock", action="store_true", help="Use mock client (testing)")
+    parser.add_argument("--mlx", action="store_true", help="Use MLX (Apple Silicon)")
+    parser.add_argument(
+        "--mlx-model", help="MLX model name (e.g., mlx-community/Llama-3.2-1B-Instruct-4bit)"
+    )
 
     parser.add_argument("-v", "--verbose", action="store_true", help="Verbose output")
 
@@ -600,6 +604,12 @@ Examples:
     # Create client
     if args.mock:
         client = MockLMClient(vocab_size=max(32, args.k))
+    elif args.mlx:
+        if not args.mlx_model:
+            parser.error("--mlx-model required (e.g., mlx-community/Llama-3.2-1B-Instruct-4bit)")
+        from lm_client import MLXClient
+
+        client = MLXClient(model_name=args.mlx_model, top_k=max(40, args.k))
     elif args.lmstudio:
         # LM Studio Open Responses API limits top_logprobs to 10
         # After prefix filtering, we often have fewer usable tokens

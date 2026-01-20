@@ -16,7 +16,7 @@ Each token encodes `log2(K)` bits by selecting from the top-K most probable toke
 - **Payload encryption** — Defeats frequency analysis on your plaintext
 - **Huffman compression** — ~4-4.5 bits/char for English text
 - **Knock sequence** — Find the payload without knowing the exact prompt
-- **Multiple backends** — Mock client, local GGUF, LM Studio API
+- **Multiple backends** — Mock client, local GGUF, LM Studio API, MLX (Apple Silicon)
 
 ## Quickstart
 
@@ -62,6 +62,21 @@ echo "Secret" | uv run python stego_secret.py encode --secret my.secret \
   --lmstudio --host http://localhost:1234/v1 --model llama-3.2-1b-instruct
 ```
 
+Or with MLX on Apple Silicon:
+
+```bash
+# Install MLX support
+uv sync --extra mlx
+
+# Encode
+echo "Secret" | uv run python stego_secret.py encode --secret my.secret \
+  --mlx --mlx-model mlx-community/Llama-3.2-1B-Instruct-4bit -o cover.txt
+
+# Decode
+uv run python stego_secret.py decode --secret my.secret \
+  --mlx --mlx-model mlx-community/Llama-3.2-1B-Instruct-4bit -i cover.txt
+```
+
 ## The Secret Blob
 
 All the parameters live in an encrypted secret file:
@@ -96,10 +111,10 @@ Cover text structure:
 uv run python stego_secret.py generate-secret -o FILE [--k K] [--knock INDICES]
 
 # Encode
-uv run python stego_secret.py encode --secret FILE [--model-path PATH | --lmstudio | --mock]
+uv run python stego_secret.py encode --secret FILE [--model-path PATH | --lmstudio | --mlx | --mock]
 
 # Decode
-uv run python stego_secret.py decode --secret FILE [--model-path PATH | --lmstudio | --mock]
+uv run python stego_secret.py decode --secret FILE [--model-path PATH | --lmstudio | --mlx | --mock]
 
 # Inspect secret (for debugging)
 uv run python stego_secret.py show-secret --secret FILE
