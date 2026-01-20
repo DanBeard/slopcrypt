@@ -23,7 +23,6 @@ import base64
 import getpass
 import heapq
 import math
-import os
 import secrets
 import sys
 from dataclasses import dataclass
@@ -34,9 +33,8 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
-from lm_client import MockLMClient, LlamaCppClient, LMClient, LMConfig, DEFAULT_MODEL_PATH
-from stego_basek import encode_with_knock, decode_with_knock
-
+from lm_client import DEFAULT_MODEL_PATH, LlamaCppClient, LMClient, LMConfig, MockLMClient
+from stego_basek import decode_with_knock, encode_with_knock
 
 # ============================================================================
 # Phase 1: Crypto & Secret Management
@@ -57,7 +55,7 @@ def derive_key(password: str, salt: bytes) -> bytes:
         salt=salt,
         iterations=PBKDF2_ITERATIONS,
     )
-    return kdf.derive(password.encode('utf-8'))
+    return kdf.derive(password.encode("utf-8"))
 
 
 def encrypt_secret_blob(secret: dict, password: str) -> str:
@@ -76,7 +74,7 @@ def encrypt_secret_blob(secret: dict, password: str) -> str:
     ciphertext = aesgcm.encrypt(nonce, plaintext, None)
 
     blob = salt + nonce + ciphertext
-    return base64.b64encode(blob).decode('ascii')
+    return base64.b64encode(blob).decode("ascii")
 
 
 def decrypt_secret_blob(blob_b64: str, password: str) -> dict:
@@ -89,22 +87,22 @@ def decrypt_secret_blob(blob_b64: str, password: str) -> dict:
     try:
         blob = base64.b64decode(blob_b64)
     except Exception as e:
-        raise ValueError(f"Invalid base64 encoding: {e}")
+        raise ValueError(f"Invalid base64 encoding: {e}") from e
 
     if len(blob) < SALT_SIZE + NONCE_SIZE + 16:  # 16 = minimum ciphertext + tag
         raise ValueError("Secret blob too short")
 
     salt = blob[:SALT_SIZE]
-    nonce = blob[SALT_SIZE:SALT_SIZE + NONCE_SIZE]
-    ciphertext = blob[SALT_SIZE + NONCE_SIZE:]
+    nonce = blob[SALT_SIZE : SALT_SIZE + NONCE_SIZE]
+    ciphertext = blob[SALT_SIZE + NONCE_SIZE :]
 
     key = derive_key(password, salt)
 
     aesgcm = AESGCM(key)
     try:
         plaintext = aesgcm.decrypt(nonce, ciphertext, None)
-    except Exception:
-        raise ValueError("Decryption failed - wrong password or corrupted data")
+    except Exception as e:
+        raise ValueError("Decryption failed - wrong password or corrupted data") from e
 
     return msgpack.unpackb(plaintext, raw=False, strict_map_key=False)
 
@@ -121,19 +119,19 @@ def validate_secret(secret: dict) -> None:
     Raises:
         ValueError: If validation fails
     """
-    required = ['version', 'knock', 'k', 'payload_key']
+    required = ["version", "knock", "k", "payload_key"]
     for field in required:
         if field not in secret:
             raise ValueError(f"Missing required field: {field}")
 
-    if secret['version'] not in (1, SECRET_VERSION):
+    if secret["version"] not in (1, SECRET_VERSION):
         raise ValueError(f"Unsupported secret version: {secret['version']}")
 
-    k = secret['k']
+    k = secret["k"]
     if not isinstance(k, int) or k < 2 or (k & (k - 1)) != 0:
         raise ValueError(f"K must be a power of 2 >= 2, got {k}")
 
-    knock = secret['knock']
+    knock = secret["knock"]
     if not isinstance(knock, list) or len(knock) < 1:
         raise ValueError("Knock sequence must be a non-empty list")
 
@@ -142,7 +140,7 @@ def validate_secret(secret: dict) -> None:
             raise ValueError(f"Knock index {idx} must be in [0, {k})")
 
     # Validate payload key
-    payload_key = secret['payload_key']
+    payload_key = secret["payload_key"]
     if not isinstance(payload_key, bytes) or len(payload_key) != PAYLOAD_KEY_SIZE:
         raise ValueError(f"payload_key must be {PAYLOAD_KEY_SIZE} bytes")
 
@@ -179,17 +177,17 @@ def decrypt_payload(encrypted: bytes, key: bytes) -> bytes:
     aesgcm = AESGCM(key)
     try:
         return aesgcm.decrypt(nonce, ciphertext, None)
-    except Exception:
-        raise ValueError("Payload decryption failed - corrupted data or wrong key")
+    except Exception as e:
+        raise ValueError("Payload decryption failed - corrupted data or wrong key") from e
 
 
 def generate_secret(
     k: int,
-    knock: Optional[list[int]] = None,
+    knock: list[int] | None = None,
     preamble_tokens: int = 10,
     suffix_tokens: int = 10,
     temperature: float = 0.8,
-    huffman_sample: Optional[bytes] = None,
+    huffman_sample: bytes | None = None,
     notes: str = "",
 ) -> dict:
     """
@@ -220,15 +218,15 @@ def generate_secret(
     payload_key = secrets.token_bytes(PAYLOAD_KEY_SIZE)
 
     secret = {
-        'version': SECRET_VERSION,
-        'knock': knock,
-        'k': k,
-        'payload_key': payload_key,
-        'preamble_tokens': preamble_tokens,
-        'suffix_tokens': suffix_tokens,
-        'temperature': temperature,
-        'huffman_freq': huffman_freq,
-        'notes': notes,
+        "version": SECRET_VERSION,
+        "knock": knock,
+        "k": k,
+        "payload_key": payload_key,
+        "preamble_tokens": preamble_tokens,
+        "suffix_tokens": suffix_tokens,
+        "temperature": temperature,
+        "huffman_freq": huffman_freq,
+        "notes": notes,
     }
 
     validate_secret(secret)
@@ -238,13 +236,13 @@ def generate_secret(
 def save_secret(secret: dict, password: str, path: str) -> None:
     """Encrypt and save secret to file."""
     blob = encrypt_secret_blob(secret, password)
-    with open(path, 'w') as f:
+    with open(path, "w") as f:
         f.write(blob)
 
 
 def load_secret(path: str, password: str) -> dict:
     """Load and decrypt secret from file."""
-    with open(path, 'r') as f:
+    with open(path) as f:
         blob = f.read().strip()
     secret = decrypt_secret_blob(blob, password)
     validate_secret(secret)
@@ -261,99 +259,100 @@ COMPRESSION_HUFFMAN = 1
 # Default English byte frequencies (based on typical text)
 # Frequencies are relative counts, will be normalized
 DEFAULT_FREQUENCIES: dict[int, int] = {
-    32: 18000,   # space
+    32: 18000,  # space
     101: 12000,  # e
-    116: 9000,   # t
-    97: 8000,    # a
-    111: 7500,   # o
-    105: 7000,   # i
-    110: 6700,   # n
-    115: 6300,   # s
-    104: 6000,   # h
-    114: 5900,   # r
-    100: 4200,   # d
-    108: 4000,   # l
-    99: 2700,    # c
-    117: 2700,   # u
-    109: 2400,   # m
-    119: 2300,   # w
-    102: 2200,   # f
-    103: 2000,   # g
-    121: 1900,   # y
-    112: 1900,   # p
-    98: 1500,    # b
-    118: 1000,   # v
-    107: 800,    # k
-    106: 150,    # j
-    120: 150,    # x
-    113: 100,    # q
-    122: 70,     # z
+    116: 9000,  # t
+    97: 8000,  # a
+    111: 7500,  # o
+    105: 7000,  # i
+    110: 6700,  # n
+    115: 6300,  # s
+    104: 6000,  # h
+    114: 5900,  # r
+    100: 4200,  # d
+    108: 4000,  # l
+    99: 2700,  # c
+    117: 2700,  # u
+    109: 2400,  # m
+    119: 2300,  # w
+    102: 2200,  # f
+    103: 2000,  # g
+    121: 1900,  # y
+    112: 1900,  # p
+    98: 1500,  # b
+    118: 1000,  # v
+    107: 800,  # k
+    106: 150,  # j
+    120: 150,  # x
+    113: 100,  # q
+    122: 70,  # z
     # Uppercase
-    84: 800,     # T
-    73: 700,     # I
-    65: 600,     # A
-    83: 500,     # S
-    72: 400,     # H
-    87: 350,     # W
-    67: 300,     # C
-    66: 250,     # B
-    80: 200,     # P
-    77: 200,     # M
-    70: 180,     # F
-    68: 170,     # D
-    82: 160,     # R
-    76: 150,     # L
-    78: 140,     # N
-    69: 130,     # E
-    71: 120,     # G
-    79: 110,     # O
-    85: 100,     # U
-    86: 90,      # V
-    89: 80,      # Y
-    75: 70,      # K
-    74: 60,      # J
-    88: 50,      # X
-    81: 40,      # Q
-    90: 30,      # Z
+    84: 800,  # T
+    73: 700,  # I
+    65: 600,  # A
+    83: 500,  # S
+    72: 400,  # H
+    87: 350,  # W
+    67: 300,  # C
+    66: 250,  # B
+    80: 200,  # P
+    77: 200,  # M
+    70: 180,  # F
+    68: 170,  # D
+    82: 160,  # R
+    76: 150,  # L
+    78: 140,  # N
+    69: 130,  # E
+    71: 120,  # G
+    79: 110,  # O
+    85: 100,  # U
+    86: 90,  # V
+    89: 80,  # Y
+    75: 70,  # K
+    74: 60,  # J
+    88: 50,  # X
+    81: 40,  # Q
+    90: 30,  # Z
     # Punctuation and digits
-    46: 600,     # .
-    44: 500,     # ,
-    39: 200,     # '
-    34: 150,     # "
-    33: 100,     # !
-    63: 100,     # ?
-    45: 80,      # -
-    58: 60,      # :
-    59: 50,      # ;
-    40: 40,      # (
-    41: 40,      # )
-    48: 50,      # 0
-    49: 50,      # 1
-    50: 40,      # 2
-    51: 35,      # 3
-    52: 30,      # 4
-    53: 30,      # 5
-    54: 25,      # 6
-    55: 25,      # 7
-    56: 20,      # 8
-    57: 20,      # 9
-    10: 300,     # newline
+    46: 600,  # .
+    44: 500,  # ,
+    39: 200,  # '
+    34: 150,  # "
+    33: 100,  # !
+    63: 100,  # ?
+    45: 80,  # -
+    58: 60,  # :
+    59: 50,  # ;
+    40: 40,  # (
+    41: 40,  # )
+    48: 50,  # 0
+    49: 50,  # 1
+    50: 40,  # 2
+    51: 35,  # 3
+    52: 30,  # 4
+    53: 30,  # 5
+    54: 25,  # 6
+    55: 25,  # 7
+    56: 20,  # 8
+    57: 20,  # 9
+    10: 300,  # newline
 }
 
 
 @dataclass
 class HuffmanNode:
     """Node in Huffman tree."""
+
     freq: int
-    byte: Optional[int] = None  # None for internal nodes
-    left: Optional['HuffmanNode'] = None
-    right: Optional['HuffmanNode'] = None
+    byte: int | None = None  # None for internal nodes
+    left: Optional["HuffmanNode"] = None
+    right: Optional["HuffmanNode"] = None
 
     def __lt__(self, other):
         return self.freq < other.freq
 
 
-def build_huffman_tree(frequencies: dict[int, int]) -> Optional[HuffmanNode]:
+def build_huffman_tree(frequencies: dict[int, int]) -> HuffmanNode | None:
     """Build Huffman tree from byte frequencies."""
     if not frequencies:
         return None
@@ -372,24 +371,24 @@ def build_huffman_tree(frequencies: dict[int, int]) -> Optional[HuffmanNode]:
     return heap[0] if heap else None
 
 
-def _build_codes(node: Optional[HuffmanNode], prefix: str, codes: dict[int, str]) -> None:
+def _build_codes(node: HuffmanNode | None, prefix: str, codes: dict[int, str]) -> None:
     """Recursively build Huffman codes from tree."""
     if node is None:
         return
 
     if node.byte is not None:
         # Leaf node
-        codes[node.byte] = prefix if prefix else '0'  # Single node case
+        codes[node.byte] = prefix if prefix else "0"  # Single node case
     else:
-        _build_codes(node.left, prefix + '0', codes)
-        _build_codes(node.right, prefix + '1', codes)
+        _build_codes(node.left, prefix + "0", codes)
+        _build_codes(node.right, prefix + "1", codes)
 
 
 def get_huffman_codes(frequencies: dict[int, int]) -> dict[int, str]:
     """Get Huffman codes for each byte."""
     tree = build_huffman_tree(frequencies)
     codes: dict[int, str] = {}
-    _build_codes(tree, '', codes)
+    _build_codes(tree, "", codes)
     return codes
 
 
@@ -421,7 +420,7 @@ def huffman_encode(data: bytes, frequencies: dict[int, int]) -> bytes:
         bits.append(0)
 
     # Convert to bytes
-    result = bytearray(bit_count.to_bytes(4, 'big'))
+    result = bytearray(bit_count.to_bytes(4, "big"))
     for i in range(0, len(bits), 8):
         byte = 0
         for j in range(8):
@@ -441,7 +440,7 @@ def huffman_decode(encoded: bytes, frequencies: dict[int, int]) -> bytes:
     if len(encoded) < 4:
         raise ValueError("Encoded data too short")
 
-    bit_count = int.from_bytes(encoded[:4], 'big')
+    bit_count = int.from_bytes(encoded[:4], "big")
     data_bytes = encoded[4:]
 
     # Convert bytes to bits
@@ -454,7 +453,7 @@ def huffman_decode(encoded: bytes, frequencies: dict[int, int]) -> bytes:
     # Build decode tree
     tree = build_huffman_tree(frequencies)
     if tree is None:
-        return b''
+        return b""
 
     # Decode
     result = bytearray()
@@ -536,7 +535,7 @@ def encode_message(
     message: bytes,
     secret: dict,
     client,
-    prompt: Optional[str] = None,
+    prompt: str | None = None,
     compress: bool = True,
     verbose: bool = False,
 ) -> str:
@@ -559,14 +558,17 @@ def encode_message(
     if prompt is None:
         prompt = DEFAULT_PROMPT
 
-    frequencies = secret.get('huffman_freq', DEFAULT_FREQUENCIES)
+    frequencies = secret.get("huffman_freq", DEFAULT_FREQUENCIES)
 
     # Step 1: Compress if enabled
     if compress:
         compressed, comp_type = compress_payload(message, frequencies)
         if verbose and comp_type == COMPRESSION_HUFFMAN:
             ratio = len(compressed) / len(message) if message else 1.0
-            print(f"Huffman compression: {len(message)} -> {len(compressed)} bytes ({ratio:.1%})", file=sys.stderr)
+            print(
+                f"Huffman compression: {len(message)} -> {len(compressed)} bytes ({ratio:.1%})",
+                file=sys.stderr,
+            )
     else:
         compressed = message
         comp_type = COMPRESSION_NONE
@@ -575,11 +577,14 @@ def encode_message(
     compressed_with_header = bytes([comp_type]) + compressed
 
     # Step 2: Encrypt the compressed data
-    payload_key = secret['payload_key']
+    payload_key = secret["payload_key"]
     encrypted = encrypt_payload(compressed_with_header, payload_key)
 
     if verbose:
-        print(f"Encrypted payload: {len(encrypted)} bytes (from {len(compressed_with_header)} compressed)", file=sys.stderr)
+        print(
+            f"Encrypted payload: {len(encrypted)} bytes (from {len(compressed_with_header)} compressed)",
+            file=sys.stderr,
+        )
 
     payload = encrypted
 
@@ -588,11 +593,11 @@ def encode_message(
         data=payload,
         client=client,
         prompt=prompt,
-        k=secret['k'],
-        knock=secret['knock'],
-        preamble_tokens=secret.get('preamble_tokens', 10),
-        suffix_tokens=secret.get('suffix_tokens', 10),
-        temperature=secret.get('temperature', 0.8),
+        k=secret["k"],
+        knock=secret["knock"],
+        preamble_tokens=secret.get("preamble_tokens", 10),
+        suffix_tokens=secret.get("suffix_tokens", 10),
+        temperature=secret.get("temperature", 0.8),
         verbose=verbose,
     )
 
@@ -603,7 +608,7 @@ def decode_message(
     cover_text: str,
     secret: dict,
     client,
-    prompt: Optional[str] = None,
+    prompt: str | None = None,
     verbose: bool = False,
 ) -> bytes:
     """
@@ -625,8 +630,8 @@ def decode_message(
     encrypted_payload = decode_with_knock(
         cover_text=cover_text,
         client=client,
-        k=secret['k'],
-        knock=secret['knock'],
+        k=secret["k"],
+        knock=secret["knock"],
         prompt=prompt or "",
         verbose=verbose,
     )
@@ -635,11 +640,11 @@ def decode_message(
         raise ValueError("Decoded payload too short")
 
     # Step 2: Decrypt
-    payload_key = secret['payload_key']
+    payload_key = secret["payload_key"]
     try:
         decrypted = decrypt_payload(encrypted_payload, payload_key)
     except ValueError as e:
-        raise ValueError(f"Payload decryption failed: {e}")
+        raise ValueError(f"Payload decryption failed: {e}") from e
 
     if verbose:
         print(f"Decrypted: {len(encrypted_payload)} -> {len(decrypted)} bytes", file=sys.stderr)
@@ -654,7 +659,7 @@ def decode_message(
     if verbose:
         print(f"Compression type: {comp_type}", file=sys.stderr)
 
-    frequencies = secret.get('huffman_freq', DEFAULT_FREQUENCIES)
+    frequencies = secret.get("huffman_freq", DEFAULT_FREQUENCIES)
     message = decompress_payload(compressed, comp_type, frequencies)
 
     if verbose and comp_type == COMPRESSION_HUFFMAN:
@@ -666,6 +671,7 @@ def decode_message(
 # ============================================================================
 # Phase 4: CLI
 # ============================================================================
+
 
 def get_password(args, confirm: bool = False) -> str:
     """Get password from args or prompt."""
@@ -706,7 +712,7 @@ def cmd_generate_secret(args):
     knock = None
     if args.knock:
         try:
-            knock = [int(x.strip()) for x in args.knock.split(',')]
+            knock = [int(x.strip()) for x in args.knock.split(",")]
             for idx in knock:
                 if idx < 0 or idx >= args.k:
                     print(f"Knock index {idx} must be in [0, {args.k})", file=sys.stderr)
@@ -718,7 +724,7 @@ def cmd_generate_secret(args):
     # Load Huffman sample if provided
     huffman_sample = None
     if args.huffman_sample:
-        with open(args.huffman_sample, 'rb') as f:
+        with open(args.huffman_sample, "rb") as f:
             huffman_sample = f.read()
 
     # Generate secret
@@ -755,7 +761,7 @@ def cmd_encode(args):
 
     # Read input
     if args.input:
-        with open(args.input, 'rb') as f:
+        with open(args.input, "rb") as f:
             message = f.read()
     else:
         message = sys.stdin.buffer.read()
@@ -776,13 +782,13 @@ def cmd_encode(args):
 
         # Output
         if args.output:
-            with open(args.output, 'w') as f:
+            with open(args.output, "w") as f:
                 f.write(cover_text)
         else:
             print(cover_text)
 
     finally:
-        if hasattr(client, 'close'):
+        if hasattr(client, "close"):
             client.close()
 
 
@@ -798,7 +804,7 @@ def cmd_decode(args):
 
     # Read input
     if args.input:
-        with open(args.input, 'r') as f:
+        with open(args.input) as f:
             cover_text = f.read()
     else:
         cover_text = sys.stdin.read()
@@ -818,13 +824,13 @@ def cmd_decode(args):
 
         # Output
         if args.output:
-            with open(args.output, 'wb') as f:
+            with open(args.output, "wb") as f:
                 f.write(message)
         else:
             sys.stdout.buffer.write(message)
 
     finally:
-        if hasattr(client, 'close'):
+        if hasattr(client, "close"):
             client.close()
 
 
@@ -845,10 +851,10 @@ def cmd_show_secret(args):
     print(f"Suffix tokens: {secret.get('suffix_tokens', 10)}")
     print(f"Temperature: {secret.get('temperature', 0.8)}")
 
-    huffman_freq = secret.get('huffman_freq', {})
+    huffman_freq = secret.get("huffman_freq", {})
     print(f"Huffman frequencies: {len(huffman_freq)} entries")
 
-    if secret.get('notes'):
+    if secret.get("notes"):
         print(f"Notes: {secret['notes']}")
 
 
@@ -875,74 +881,82 @@ Examples:
 
   Show secret parameters:
     python stego_secret.py show-secret --secret my.secret
-        """
+        """,
     )
 
-    subparsers = parser.add_subparsers(dest='command', required=True)
+    subparsers = parser.add_subparsers(dest="command", required=True)
 
     # generate-secret
-    gen_parser = subparsers.add_parser('generate-secret', help='Generate new secret')
-    gen_parser.add_argument('-o', '--output', required=True, help='Output secret file')
-    gen_parser.add_argument('--k', type=int, default=16, help='K value (default: 16)')
-    gen_parser.add_argument('--knock', help='Comma-separated knock sequence (auto-generated if not specified)')
-    gen_parser.add_argument('--preamble', type=int, default=10, help='Preamble tokens (default: 10)')
-    gen_parser.add_argument('--suffix', type=int, default=10, help='Suffix tokens (default: 10)')
-    gen_parser.add_argument('--temperature', type=float, default=0.8, help='Temperature (default: 0.8)')
-    gen_parser.add_argument('--huffman-sample', help='Sample file for Huffman frequencies')
-    gen_parser.add_argument('--notes', help='Optional notes/metadata')
-    gen_parser.add_argument('--password', help='Password (prompted if not provided)')
+    gen_parser = subparsers.add_parser("generate-secret", help="Generate new secret")
+    gen_parser.add_argument("-o", "--output", required=True, help="Output secret file")
+    gen_parser.add_argument("--k", type=int, default=16, help="K value (default: 16)")
+    gen_parser.add_argument(
+        "--knock", help="Comma-separated knock sequence (auto-generated if not specified)"
+    )
+    gen_parser.add_argument(
+        "--preamble", type=int, default=10, help="Preamble tokens (default: 10)"
+    )
+    gen_parser.add_argument("--suffix", type=int, default=10, help="Suffix tokens (default: 10)")
+    gen_parser.add_argument(
+        "--temperature", type=float, default=0.8, help="Temperature (default: 0.8)"
+    )
+    gen_parser.add_argument("--huffman-sample", help="Sample file for Huffman frequencies")
+    gen_parser.add_argument("--notes", help="Optional notes/metadata")
+    gen_parser.add_argument("--password", help="Password (prompted if not provided)")
 
     # encode
-    enc_parser = subparsers.add_parser('encode', help='Encode message')
-    enc_parser.add_argument('--secret', required=True, help='Secret file')
-    enc_parser.add_argument('-i', '--input', help='Input file (default: stdin)')
-    enc_parser.add_argument('-o', '--output', help='Output file (default: stdout)')
-    enc_parser.add_argument('--prompt', help='Prompt for cover text (default: traveler story)')
-    enc_parser.add_argument('--no-compress', action='store_true', help='Disable Huffman compression')
-    enc_parser.add_argument('--password', help='Password (prompted if not provided)')
-    enc_parser.add_argument('-v', '--verbose', action='store_true', help='Verbose output')
+    enc_parser = subparsers.add_parser("encode", help="Encode message")
+    enc_parser.add_argument("--secret", required=True, help="Secret file")
+    enc_parser.add_argument("-i", "--input", help="Input file (default: stdin)")
+    enc_parser.add_argument("-o", "--output", help="Output file (default: stdout)")
+    enc_parser.add_argument("--prompt", help="Prompt for cover text (default: traveler story)")
+    enc_parser.add_argument(
+        "--no-compress", action="store_true", help="Disable Huffman compression"
+    )
+    enc_parser.add_argument("--password", help="Password (prompted if not provided)")
+    enc_parser.add_argument("-v", "--verbose", action="store_true", help="Verbose output")
     # Model selection
-    enc_parser.add_argument('--model-path', default=DEFAULT_MODEL_PATH, help='Path to GGUF model')
-    enc_parser.add_argument('--lmstudio', action='store_true', help='Use LM Studio API')
-    enc_parser.add_argument('--host', default='http://192.168.1.12:1234/v1', help='LM Studio URL')
-    enc_parser.add_argument('--model', help='Model name for LM Studio')
-    enc_parser.add_argument('--mock', action='store_true', help='Use mock client (testing)')
+    enc_parser.add_argument("--model-path", default=DEFAULT_MODEL_PATH, help="Path to GGUF model")
+    enc_parser.add_argument("--lmstudio", action="store_true", help="Use LM Studio API")
+    enc_parser.add_argument("--host", default="http://192.168.1.12:1234/v1", help="LM Studio URL")
+    enc_parser.add_argument("--model", help="Model name for LM Studio")
+    enc_parser.add_argument("--mock", action="store_true", help="Use mock client (testing)")
 
     # decode
-    dec_parser = subparsers.add_parser('decode', help='Decode message')
-    dec_parser.add_argument('--secret', required=True, help='Secret file')
-    dec_parser.add_argument('-i', '--input', help='Input file (default: stdin)')
-    dec_parser.add_argument('-o', '--output', help='Output file (default: stdout)')
-    dec_parser.add_argument('--prompt', help='Prompt used during encoding (for context alignment)')
-    dec_parser.add_argument('--password', help='Password (prompted if not provided)')
-    dec_parser.add_argument('-v', '--verbose', action='store_true', help='Verbose output')
+    dec_parser = subparsers.add_parser("decode", help="Decode message")
+    dec_parser.add_argument("--secret", required=True, help="Secret file")
+    dec_parser.add_argument("-i", "--input", help="Input file (default: stdin)")
+    dec_parser.add_argument("-o", "--output", help="Output file (default: stdout)")
+    dec_parser.add_argument("--prompt", help="Prompt used during encoding (for context alignment)")
+    dec_parser.add_argument("--password", help="Password (prompted if not provided)")
+    dec_parser.add_argument("-v", "--verbose", action="store_true", help="Verbose output")
     # Model selection
-    dec_parser.add_argument('--model-path', default=DEFAULT_MODEL_PATH, help='Path to GGUF model')
-    dec_parser.add_argument('--lmstudio', action='store_true', help='Use LM Studio API')
-    dec_parser.add_argument('--host', default='http://192.168.1.12:1234/v1', help='LM Studio URL')
-    dec_parser.add_argument('--model', help='Model name for LM Studio')
-    dec_parser.add_argument('--mock', action='store_true', help='Use mock client (testing)')
+    dec_parser.add_argument("--model-path", default=DEFAULT_MODEL_PATH, help="Path to GGUF model")
+    dec_parser.add_argument("--lmstudio", action="store_true", help="Use LM Studio API")
+    dec_parser.add_argument("--host", default="http://192.168.1.12:1234/v1", help="LM Studio URL")
+    dec_parser.add_argument("--model", help="Model name for LM Studio")
+    dec_parser.add_argument("--mock", action="store_true", help="Use mock client (testing)")
 
     # show-secret
-    show_parser = subparsers.add_parser('show-secret', help='Show secret parameters')
-    show_parser.add_argument('--secret', required=True, help='Secret file')
-    show_parser.add_argument('--password', help='Password (prompted if not provided)')
+    show_parser = subparsers.add_parser("show-secret", help="Show secret parameters")
+    show_parser.add_argument("--secret", required=True, help="Secret file")
+    show_parser.add_argument("--password", help="Password (prompted if not provided)")
 
     args = parser.parse_args()
 
     # Validate K is power of 2 for generate-secret
-    if args.command == 'generate-secret':
+    if args.command == "generate-secret":
         if args.k < 2 or (args.k & (args.k - 1)) != 0:
             parser.error(f"K must be a power of 2 >= 2, got {args.k}")
 
     # Dispatch
-    if args.command == 'generate-secret':
+    if args.command == "generate-secret":
         cmd_generate_secret(args)
-    elif args.command == 'encode':
+    elif args.command == "encode":
         cmd_encode(args)
-    elif args.command == 'decode':
+    elif args.command == "decode":
         cmd_decode(args)
-    elif args.command == 'show-secret':
+    elif args.command == "show-secret":
         cmd_show_secret(args)
 
 

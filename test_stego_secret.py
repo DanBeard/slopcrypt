@@ -10,36 +10,35 @@ import tempfile
 
 import pytest
 
+from lm_client import MockLMClient
 from stego_secret import (
-    # Phase 1: Crypto
-    derive_key,
-    encrypt_secret_blob,
-    decrypt_secret_blob,
-    generate_random_knock,
-    validate_secret,
-    generate_secret,
-    save_secret,
-    load_secret,
-    SECRET_VERSION,
-    PAYLOAD_KEY_SIZE,
-    encrypt_payload,
-    decrypt_payload,
+    COMPRESSION_HUFFMAN,
     # Phase 2: Huffman
     COMPRESSION_NONE,
-    COMPRESSION_HUFFMAN,
     DEFAULT_FREQUENCIES,
-    build_huffman_tree,
-    get_huffman_codes,
-    huffman_encode,
-    huffman_decode,
-    compress_payload,
-    decompress_payload,
+    PAYLOAD_KEY_SIZE,
     build_frequency_table,
+    build_huffman_tree,
+    compress_payload,
+    decode_message,
+    decompress_payload,
+    decrypt_payload,
+    decrypt_secret_blob,
+    # Phase 1: Crypto
+    derive_key,
     # Phase 3: Wrappers
     encode_message,
-    decode_message,
+    encrypt_payload,
+    encrypt_secret_blob,
+    generate_random_knock,
+    generate_secret,
+    get_huffman_codes,
+    huffman_decode,
+    huffman_encode,
+    load_secret,
+    save_secret,
+    validate_secret,
 )
-from lm_client import MockLMClient
 
 
 class TestCrypto:
@@ -47,7 +46,7 @@ class TestCrypto:
 
     def test_derive_key_deterministic(self):
         """Same password and salt should produce same key."""
-        salt = b'0123456789abcdef'
+        salt = b"0123456789abcdef"
         key1 = derive_key("password123", salt)
         key2 = derive_key("password123", salt)
         assert key1 == key2
@@ -55,24 +54,24 @@ class TestCrypto:
 
     def test_derive_key_different_passwords(self):
         """Different passwords should produce different keys."""
-        salt = b'0123456789abcdef'
+        salt = b"0123456789abcdef"
         key1 = derive_key("password1", salt)
         key2 = derive_key("password2", salt)
         assert key1 != key2
 
     def test_derive_key_different_salts(self):
         """Different salts should produce different keys."""
-        key1 = derive_key("password", b'salt1234salt1234')
-        key2 = derive_key("password", b'salt5678salt5678')
+        key1 = derive_key("password", b"salt1234salt1234")
+        key2 = derive_key("password", b"salt5678salt5678")
         assert key1 != key2
 
     def test_encrypt_decrypt_roundtrip(self):
         """Encrypt then decrypt should return original data."""
         secret = {
-            'version': 2,
-            'knock': [1, 2, 3],
-            'k': 16,
-            'payload_key': b'0' * 32,
+            "version": 2,
+            "knock": [1, 2, 3],
+            "k": 16,
+            "payload_key": b"0" * 32,
         }
         password = "test_password"
 
@@ -83,7 +82,7 @@ class TestCrypto:
 
     def test_decrypt_wrong_password(self):
         """Decryption with wrong password should fail."""
-        secret = {'version': 2, 'knock': [1], 'k': 16, 'payload_key': b'0' * 32}
+        secret = {"version": 2, "knock": [1], "k": 16, "payload_key": b"0" * 32}
         encrypted = encrypt_secret_blob(secret, "correct_password")
 
         with pytest.raises(ValueError, match="Decryption failed"):
@@ -91,7 +90,7 @@ class TestCrypto:
 
     def test_decrypt_corrupted_blob(self):
         """Decryption of corrupted blob should fail."""
-        secret = {'version': 2, 'knock': [1], 'k': 16, 'payload_key': b'0' * 32}
+        secret = {"version": 2, "knock": [1], "k": 16, "payload_key": b"0" * 32}
         encrypted = encrypt_secret_blob(secret, "password")
 
         # Corrupt the blob
@@ -115,54 +114,54 @@ class TestCrypto:
     def test_validate_secret_valid(self):
         """Valid secret should pass validation."""
         secret = {
-            'version': 2,
-            'knock': [1, 2, 3, 4],
-            'k': 16,
-            'payload_key': b'0' * 32,
+            "version": 2,
+            "knock": [1, 2, 3, 4],
+            "k": 16,
+            "payload_key": b"0" * 32,
         }
         validate_secret(secret)  # Should not raise
 
     def test_validate_secret_missing_field(self):
         """Missing required field should fail validation."""
-        secret = {'version': 2, 'knock': [1, 2], 'k': 16}  # Missing payload_key
+        secret = {"version": 2, "knock": [1, 2], "k": 16}  # Missing payload_key
         with pytest.raises(ValueError, match="Missing required field"):
             validate_secret(secret)
 
     def test_validate_secret_invalid_k(self):
         """Non-power-of-2 K should fail validation."""
-        secret = {'version': 2, 'knock': [1], 'k': 15, 'payload_key': b'0' * 32}
+        secret = {"version": 2, "knock": [1], "k": 15, "payload_key": b"0" * 32}
         with pytest.raises(ValueError, match="K must be a power of 2"):
             validate_secret(secret)
 
     def test_validate_secret_knock_out_of_range(self):
         """Knock index >= K should fail validation."""
-        secret = {'version': 2, 'knock': [1, 20], 'k': 16, 'payload_key': b'0' * 32}
+        secret = {"version": 2, "knock": [1, 20], "k": 16, "payload_key": b"0" * 32}
         with pytest.raises(ValueError, match="must be in"):
             validate_secret(secret)
 
     def test_generate_secret_auto_knock(self):
         """Generate secret should auto-create knock if not specified."""
         secret = generate_secret(k=16)
-        assert 'knock' in secret
-        assert len(secret['knock']) == 6  # Default length
-        assert all(0 <= idx < 16 for idx in secret['knock'])
+        assert "knock" in secret
+        assert len(secret["knock"]) == 6  # Default length
+        assert all(0 <= idx < 16 for idx in secret["knock"])
 
     def test_generate_secret_explicit_knock(self):
         """Generate secret should use provided knock."""
         knock = [1, 5, 9, 13]
         secret = generate_secret(k=16, knock=knock)
-        assert secret['knock'] == knock
+        assert secret["knock"] == knock
 
     def test_generate_secret_has_payload_key(self):
         """Generate secret should include random payload key."""
         secret = generate_secret(k=16)
-        assert 'payload_key' in secret
-        assert isinstance(secret['payload_key'], bytes)
-        assert len(secret['payload_key']) == PAYLOAD_KEY_SIZE
+        assert "payload_key" in secret
+        assert isinstance(secret["payload_key"], bytes)
+        assert len(secret["payload_key"]) == PAYLOAD_KEY_SIZE
 
     def test_encrypt_decrypt_payload_roundtrip(self):
         """Encrypt then decrypt payload should return original data."""
-        key = b'0' * PAYLOAD_KEY_SIZE
+        key = b"0" * PAYLOAD_KEY_SIZE
         data = b"Secret payload data"
 
         encrypted = encrypt_payload(data, key)
@@ -172,8 +171,8 @@ class TestCrypto:
 
     def test_decrypt_payload_wrong_key(self):
         """Decrypting with wrong key should fail."""
-        key1 = b'0' * PAYLOAD_KEY_SIZE
-        key2 = b'1' * PAYLOAD_KEY_SIZE
+        key1 = b"0" * PAYLOAD_KEY_SIZE
+        key2 = b"1" * PAYLOAD_KEY_SIZE
         data = b"Secret data"
 
         encrypted = encrypt_payload(data, key1)
@@ -186,7 +185,7 @@ class TestCrypto:
         secret = generate_secret(k=16)
         password = "test123"
 
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.secret', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".secret", delete=False) as f:
             path = f.name
 
         try:
@@ -202,20 +201,20 @@ class TestHuffman:
 
     def test_build_huffman_tree(self):
         """Should build valid Huffman tree."""
-        freq = {ord('a'): 5, ord('b'): 9, ord('c'): 12}
+        freq = {ord("a"): 5, ord("b"): 9, ord("c"): 12}
         tree = build_huffman_tree(freq)
         assert tree is not None
         assert tree.freq == 26  # Sum of all frequencies
 
     def test_get_huffman_codes(self):
         """Should generate valid codes for each byte."""
-        freq = {ord('a'): 5, ord('b'): 9, ord('c'): 12}
+        freq = {ord("a"): 5, ord("b"): 9, ord("c"): 12}
         codes = get_huffman_codes(freq)
         assert len(codes) == 3
         # All codes should be unique
         assert len(set(codes.values())) == 3
         # All codes should be binary strings
-        assert all(set(code).issubset({'0', '1'}) for code in codes.values())
+        assert all(set(code).issubset({"0", "1"}) for code in codes.values())
 
     def test_huffman_encode_decode_roundtrip(self):
         """Encode then decode should return original data."""
@@ -285,11 +284,11 @@ class TestHuffman:
         sample = b"aaabbc"
         freq = build_frequency_table(sample)
 
-        assert freq[ord('a')] == 3
-        assert freq[ord('b')] == 2
-        assert freq[ord('c')] == 1
+        assert freq[ord("a")] == 3
+        assert freq[ord("b")] == 2
+        assert freq[ord("c")] == 1
         # Printable ASCII should have at least 1
-        assert freq.get(ord('z'), 0) >= 1
+        assert freq.get(ord("z"), 0) >= 1
 
 
 class TestEncodeDecodeWrappers:
@@ -362,7 +361,7 @@ class TestEncodeDecodeWrappers:
 
     def test_encode_decode_unicode_text(self, mock_client, secret):
         """Should handle UTF-8 encoded text."""
-        message = "Hello, \u4e16\u754c! \U0001F600".encode('utf-8')
+        message = "Hello, \u4e16\u754c! \U0001f600".encode()
         prompt = "Test: "
 
         cover_text = encode_message(message, secret, mock_client, prompt=prompt)
@@ -386,7 +385,7 @@ class TestIntegration:
         # Encrypt and save
         password = "integration_test_password"
 
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.secret', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".secret", delete=False) as f:
             path = f.name
 
         try:
@@ -441,9 +440,8 @@ class TestIntegration:
 
         cover_text = encode_message(message, secret1, client, prompt=prompt)
 
-        # Decoding with wrong knock should either fail or return wrong data
-        with pytest.raises(Exception):
-            # Should fail to find knock sequence
+        # Decoding with wrong knock should fail to find knock sequence
+        with pytest.raises(ValueError, match="[Kk]nock"):
             decode_message(cover_text, secret2, client, prompt=prompt)
 
 

@@ -11,17 +11,22 @@ Usage:
 """
 
 import argparse
-import sys
 import math
 import random
+import sys
 
-from lm_client import LMClient, LMConfig, MockLMClient, LlamaCppClient, DEFAULT_MODEL_PATH
+from lm_client import DEFAULT_MODEL_PATH, LlamaCppClient, LMClient, LMConfig, MockLMClient
 from utils import (
-    bytes_to_bits, bits_to_bytes, bits_to_int, int_to_bits,
-    filter_prefix_tokens, find_longest_match,
-    parse_knock_sequence, find_knock_sequence, check_knock_in_data,
+    bits_to_bytes,
+    bits_to_int,
+    bytes_to_bits,
+    check_knock_in_data,
+    filter_prefix_tokens,
+    find_knock_sequence,
+    find_longest_match,
+    int_to_bits,
+    parse_knock_sequence,
 )
-
 
 DEFAULT_PROMPT = """Write a short story about a traveler:
 
@@ -86,7 +91,7 @@ def encode(
     bits_per_token = int(math.log2(k))
 
     # Prepend 4-byte length header
-    full_data = len(data).to_bytes(4, 'big') + data
+    full_data = len(data).to_bytes(4, "big") + data
     bit_stream = bytes_to_bits(full_data)
 
     context = prompt
@@ -95,7 +100,7 @@ def encode(
 
     while bit_idx < len(bit_stream):
         # Get next chunk of bits
-        chunk = bit_stream[bit_idx:bit_idx + bits_per_token]
+        chunk = bit_stream[bit_idx : bit_idx + bits_per_token]
         # Pad if needed (last chunk)
         while len(chunk) < bits_per_token:
             chunk.append(0)
@@ -126,12 +131,17 @@ def encode(
         bit_idx += bits_per_token
 
         if verbose and len(tokens) % 50 == 0:
-            print(f"Encoded {len(tokens)} tokens ({bit_idx}/{len(bit_stream)} bits)...", file=sys.stderr)
+            print(
+                f"Encoded {len(tokens)} tokens ({bit_idx}/{len(bit_stream)} bits)...",
+                file=sys.stderr,
+            )
 
     if verbose:
-        print(f"Encoding complete: {len(tokens)} tokens, {bits_per_token} bits/token", file=sys.stderr)
+        print(
+            f"Encoding complete: {len(tokens)} tokens, {bits_per_token} bits/token", file=sys.stderr
+        )
 
-    return ''.join(tokens)
+    return "".join(tokens)
 
 
 def encode_with_knock(
@@ -156,19 +166,23 @@ def encode_with_knock(
     bits_per_token = int(math.log2(k))
 
     # Prepend 4-byte length header
-    full_data = len(data).to_bytes(4, 'big') + data
+    full_data = len(data).to_bytes(4, "big") + data
     bit_stream = bytes_to_bits(full_data)
 
     # Check if knock sequence would appear in payload
     if check_knock_in_data(bit_stream, knock, bits_per_token):
-        raise ValueError("Knock sequence would appear in encoded payload, use different knock sequence")
+        raise ValueError(
+            "Knock sequence would appear in encoded payload, use different knock sequence"
+        )
 
     context = prompt
     tokens = []
 
     # Phase 1: Generate preamble naturally (sampling)
     if verbose:
-        print(f"Generating {preamble_tokens} preamble tokens (temp={temperature})...", file=sys.stderr)
+        print(
+            f"Generating {preamble_tokens} preamble tokens (temp={temperature})...", file=sys.stderr
+        )
 
     preamble_indices = []
     for _ in range(preamble_tokens):
@@ -211,7 +225,7 @@ def encode_with_knock(
 
     bit_idx = 0
     while bit_idx < len(bit_stream):
-        chunk = bit_stream[bit_idx:bit_idx + bits_per_token]
+        chunk = bit_stream[bit_idx : bit_idx + bits_per_token]
         while len(chunk) < bits_per_token:
             chunk.append(0)
 
@@ -254,11 +268,14 @@ def encode_with_knock(
         context += token
 
     if verbose:
-        print(f"Encoding complete: {len(tokens)} tokens ({preamble_tokens} preamble + "
-              f"{len(knock)} knock + payload + {suffix_tokens} suffix)", file=sys.stderr)
+        print(
+            f"Encoding complete: {len(tokens)} tokens ({preamble_tokens} preamble + "
+            f"{len(knock)} knock + payload + {suffix_tokens} suffix)",
+            file=sys.stderr,
+        )
 
     # Return prompt + generated tokens as complete cover text
-    return prompt + ''.join(tokens)
+    return prompt + "".join(tokens)
 
 
 def decode(
@@ -304,7 +321,7 @@ def decode(
         bits.extend(token_bits)
 
         context += matched.token
-        remaining = remaining[len(matched.token):]
+        remaining = remaining[len(matched.token) :]
         token_count += 1
 
         if verbose and token_count % 50 == 0:
@@ -329,17 +346,20 @@ def decode(
     all_bytes = bits_to_bytes(bits)
 
     if len(all_bytes) < 4:
-        return b''
+        return b""
 
     # Extract length and payload
-    payload_len = int.from_bytes(all_bytes[:4], 'big')
+    payload_len = int.from_bytes(all_bytes[:4], "big")
 
     if payload_len > len(all_bytes) - 4:
         if verbose:
-            print(f"Warning: payload_len={payload_len} but only {len(all_bytes)-4} bytes available", file=sys.stderr)
+            print(
+                f"Warning: payload_len={payload_len} but only {len(all_bytes) - 4} bytes available",
+                file=sys.stderr,
+            )
         payload_len = len(all_bytes) - 4
 
-    return all_bytes[4:4 + payload_len]
+    return all_bytes[4 : 4 + payload_len]
 
 
 def decode_with_knock(
@@ -372,9 +392,12 @@ def decode_with_knock(
     # If prompt provided and cover_text starts with it, strip prompt and use as context
     if prompt and cover_text.startswith(prompt):
         context = prompt
-        remaining = cover_text[len(prompt):]
+        remaining = cover_text[len(prompt) :]
         if verbose:
-            print(f"Stripped prompt ({len(prompt)} chars), starting with generated tokens", file=sys.stderr)
+            print(
+                f"Stripped prompt ({len(prompt)} chars), starting with generated tokens",
+                file=sys.stderr,
+            )
     else:
         context = ""
         remaining = cover_text
@@ -418,7 +441,7 @@ def decode_with_knock(
         consumed += len(matched.token)
         token_positions.append(consumed)
         context += matched.token
-        remaining = remaining[len(matched.token):]
+        remaining = remaining[len(matched.token) :]
         token_count += 1
 
     # Phase 2: Find knock sequence
@@ -455,23 +478,29 @@ def decode_with_knock(
                 break
 
     if verbose:
-        print(f"Decoding complete: {len(bits)} bits from {len(payload_indices)} tokens", file=sys.stderr)
+        print(
+            f"Decoding complete: {len(bits)} bits from {len(payload_indices)} tokens",
+            file=sys.stderr,
+        )
 
     # Convert bits to bytes
     all_bytes = bits_to_bytes(bits)
 
     if len(all_bytes) < 4:
-        return b''
+        return b""
 
     # Extract length and payload
-    payload_len = int.from_bytes(all_bytes[:4], 'big')
+    payload_len = int.from_bytes(all_bytes[:4], "big")
 
     if payload_len > len(all_bytes) - 4:
         if verbose:
-            print(f"Warning: payload_len={payload_len} but only {len(all_bytes)-4} bytes available", file=sys.stderr)
+            print(
+                f"Warning: payload_len={payload_len} but only {len(all_bytes) - 4} bytes available",
+                file=sys.stderr,
+            )
         payload_len = len(all_bytes) - 4
 
-    return all_bytes[4:4 + payload_len]
+    return all_bytes[4 : 4 + payload_len]
 
 
 def main():
@@ -496,34 +525,52 @@ Examples:
   Token knock mode (natural-looking cover text):
     echo "Secret" | python stego_basek.py encode --mock --knock 4,7,2,9 --preamble 20 --suffix 15
     python stego_basek.py decode --mock --knock 4,7,2,9 -i cover.txt
-        """
+        """,
     )
 
     parser.add_argument("mode", choices=["encode", "decode"])
     parser.add_argument("-i", "--input", help="Input file (default: stdin)")
     parser.add_argument("-o", "--output", help="Output file (default: stdout)")
 
-    parser.add_argument("-k", type=int, default=DEFAULT_K,
-                        help=f"Number of tokens to choose from (default: {DEFAULT_K}, must be power of 2)")
+    parser.add_argument(
+        "-k",
+        type=int,
+        default=DEFAULT_K,
+        help=f"Number of tokens to choose from (default: {DEFAULT_K}, must be power of 2)",
+    )
     parser.add_argument("--prompt", default=DEFAULT_PROMPT, help="Initial prompt")
 
     # Model selection
     parser.add_argument("--model-path", default=DEFAULT_MODEL_PATH, help="Path to GGUF model")
     parser.add_argument("--lmstudio", action="store_true", help="Use LM Studio API")
     parser.add_argument("--host", default="http://192.168.1.12:1234/v1", help="LM Studio URL")
-    parser.add_argument("--model", default=None, help="Model name for LM Studio (e.g., qwen/qwen3-14b)")
+    parser.add_argument(
+        "--model", default=None, help="Model name for LM Studio (e.g., qwen/qwen3-14b)"
+    )
     parser.add_argument("--mock", action="store_true", help="Use mock client (testing)")
 
     parser.add_argument("-v", "--verbose", action="store_true", help="Verbose output")
 
     # Token knock options
     parser.add_argument("--knock", help="Comma-separated knock sequence (e.g., 4,7,2,9)")
-    parser.add_argument("--preamble", type=int, default=10,
-                        help="Natural tokens to generate before knock (default: 10)")
-    parser.add_argument("--suffix", type=int, default=10,
-                        help="Natural tokens to generate after payload (default: 10)")
-    parser.add_argument("--temperature", type=float, default=0.8,
-                        help="Sampling temperature for preamble/suffix (default: 0.8)")
+    parser.add_argument(
+        "--preamble",
+        type=int,
+        default=10,
+        help="Natural tokens to generate before knock (default: 10)",
+    )
+    parser.add_argument(
+        "--suffix",
+        type=int,
+        default=10,
+        help="Natural tokens to generate after payload (default: 10)",
+    )
+    parser.add_argument(
+        "--temperature",
+        type=float,
+        default=0.8,
+        help="Sampling temperature for preamble/suffix (default: 0.8)",
+    )
 
     args = parser.parse_args()
 
@@ -558,7 +605,10 @@ Examples:
         # After prefix filtering, we often have fewer usable tokens
         # K=4 (2 bits/token) is reliable; K=8 can cause data loss
         if args.k > 4:
-            print(f"Note: Using K=4 for LM Studio (prefix filtering reduces usable tokens)", file=sys.stderr)
+            print(
+                "Note: Using K=4 for LM Studio (prefix filtering reduces usable tokens)",
+                file=sys.stderr,
+            )
             args.k = 4
         if not args.model:
             parser.error("--model required for LM Studio (e.g., --model qwen/qwen3-14b)")
@@ -575,14 +625,22 @@ Examples:
                 bits_per_token = int(math.log2(args.k))
                 total_bits = (len(input_data) + 4) * 8
                 est_tokens = (total_bits + bits_per_token - 1) // bits_per_token
-                print(f"Encoding {len(input_data)} bytes (~{est_tokens} tokens at {bits_per_token} bits/token)", file=sys.stderr)
+                print(
+                    f"Encoding {len(input_data)} bytes (~{est_tokens} tokens at {bits_per_token} bits/token)",
+                    file=sys.stderr,
+                )
 
             if knock:
                 result = encode_with_knock(
-                    input_data, client, args.prompt, k=args.k,
-                    knock=knock, preamble_tokens=args.preamble,
-                    suffix_tokens=args.suffix, temperature=args.temperature,
-                    verbose=args.verbose
+                    input_data,
+                    client,
+                    args.prompt,
+                    k=args.k,
+                    knock=knock,
+                    preamble_tokens=args.preamble,
+                    suffix_tokens=args.suffix,
+                    temperature=args.temperature,
+                    verbose=args.verbose,
                 )
             else:
                 result = encode(input_data, client, args.prompt, k=args.k, verbose=args.verbose)
@@ -599,8 +657,7 @@ Examples:
 
             if knock:
                 result = decode_with_knock(
-                    input_data, client, k=args.k,
-                    knock=knock, verbose=args.verbose
+                    input_data, client, k=args.k, knock=knock, verbose=args.verbose
                 )
             else:
                 result = decode(input_data, client, args.prompt, k=args.k, verbose=args.verbose)
@@ -612,7 +669,7 @@ Examples:
                 sys.stdout.buffer.write(result)
 
     finally:
-        if hasattr(client, 'close'):
+        if hasattr(client, "close"):
             client.close()
 
 

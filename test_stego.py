@@ -8,20 +8,20 @@ Or simply: python test_stego.py
 
 import unittest
 
+from lm_client import MockLMClient
+from stego_basek import decode, decode_with_knock, encode, encode_with_knock
 from utils import (
     TokenProb,
-    bytes_to_bits,
     bits_to_bytes,
     bits_to_int,
-    int_to_bits,
-    filter_prefix_tokens,
-    find_longest_match,
-    parse_knock_sequence,
-    find_knock_sequence,
+    bytes_to_bits,
     check_knock_in_data,
+    filter_prefix_tokens,
+    find_knock_sequence,
+    find_longest_match,
+    int_to_bits,
+    parse_knock_sequence,
 )
-from lm_client import MockLMClient
-from stego_basek import encode, decode, encode_with_knock, decode_with_knock
 
 
 class TestBitConversions(unittest.TestCase):
@@ -30,27 +30,26 @@ class TestBitConversions(unittest.TestCase):
     def test_bytes_to_bits(self):
         """Test converting bytes to bits."""
         # Single byte
-        self.assertEqual(bytes_to_bits(b'\x00'), [0, 0, 0, 0, 0, 0, 0, 0])
-        self.assertEqual(bytes_to_bits(b'\xff'), [1, 1, 1, 1, 1, 1, 1, 1])
-        self.assertEqual(bytes_to_bits(b'\x80'), [1, 0, 0, 0, 0, 0, 0, 0])
-        self.assertEqual(bytes_to_bits(b'\x01'), [0, 0, 0, 0, 0, 0, 0, 1])
+        self.assertEqual(bytes_to_bits(b"\x00"), [0, 0, 0, 0, 0, 0, 0, 0])
+        self.assertEqual(bytes_to_bits(b"\xff"), [1, 1, 1, 1, 1, 1, 1, 1])
+        self.assertEqual(bytes_to_bits(b"\x80"), [1, 0, 0, 0, 0, 0, 0, 0])
+        self.assertEqual(bytes_to_bits(b"\x01"), [0, 0, 0, 0, 0, 0, 0, 1])
 
         # Multiple bytes
         self.assertEqual(
-            bytes_to_bits(b'\xab\xcd'),
-            [1, 0, 1, 0, 1, 0, 1, 1, 1, 1, 0, 0, 1, 1, 0, 1]
+            bytes_to_bits(b"\xab\xcd"), [1, 0, 1, 0, 1, 0, 1, 1, 1, 1, 0, 0, 1, 1, 0, 1]
         )
 
     def test_bits_to_bytes(self):
         """Test converting bits to bytes."""
-        self.assertEqual(bits_to_bytes([0, 0, 0, 0, 0, 0, 0, 0]), b'\x00')
-        self.assertEqual(bits_to_bytes([1, 1, 1, 1, 1, 1, 1, 1]), b'\xff')
-        self.assertEqual(bits_to_bytes([1, 0, 1, 0, 1, 0, 1, 1]), b'\xab')
+        self.assertEqual(bits_to_bytes([0, 0, 0, 0, 0, 0, 0, 0]), b"\x00")
+        self.assertEqual(bits_to_bytes([1, 1, 1, 1, 1, 1, 1, 1]), b"\xff")
+        self.assertEqual(bits_to_bytes([1, 0, 1, 0, 1, 0, 1, 1]), b"\xab")
 
     def test_bits_to_bytes_padding(self):
         """Test that bits_to_bytes pads to byte boundary."""
         # 4 bits should be padded to 8
-        self.assertEqual(bits_to_bytes([1, 0, 1, 0]), b'\xa0')
+        self.assertEqual(bits_to_bytes([1, 0, 1, 0]), b"\xa0")
 
     def test_bits_to_int(self):
         """Test converting bits to integer."""
@@ -69,7 +68,7 @@ class TestBitConversions(unittest.TestCase):
 
     def test_roundtrip(self):
         """Test bytes -> bits -> bytes roundtrip."""
-        original = b'\xde\xad\xbe\xef'
+        original = b"\xde\xad\xbe\xef"
         bits = bytes_to_bits(original)
         recovered = bits_to_bytes(bits)
         self.assertEqual(recovered, original)
@@ -81,9 +80,9 @@ class TestTokenUtilities(unittest.TestCase):
     def test_filter_prefix_tokens(self):
         """Test filtering out prefix tokens."""
         dist = [
-            TokenProb(" ", 0.3),       # prefix of " the"
+            TokenProb(" ", 0.3),  # prefix of " the"
             TokenProb(" the", 0.2),
-            TokenProb(" a", 0.15),     # prefix of " an"
+            TokenProb(" a", 0.15),  # prefix of " an"
             TokenProb(" an", 0.1),
             TokenProb("x", 0.05),
         ]
@@ -140,7 +139,7 @@ class TestMockClient(unittest.TestCase):
         dist2 = client.get_token_distribution("Hello world")
 
         self.assertEqual(len(dist1), len(dist2))
-        for t1, t2 in zip(dist1, dist2):
+        for t1, t2 in zip(dist1, dist2, strict=True):
             self.assertEqual(t1.token, t2.token)
             self.assertAlmostEqual(t1.prob, t2.prob)
 
@@ -170,7 +169,7 @@ class TestBaseKSteganography(unittest.TestCase):
 
     def test_encode_decode_small(self):
         """Test full encode/decode cycle with small payload."""
-        original = b'Hi!'
+        original = b"Hi!"
 
         cover = encode(original, self.mock_client, self.prompt, k=16)
 
@@ -179,12 +178,15 @@ class TestBaseKSteganography(unittest.TestCase):
 
         recovered = decode(cover, self.mock_client, self.prompt, k=16)
 
-        self.assertEqual(recovered, original,
-                        f"Round-trip failed. Original: {original!r}, Recovered: {recovered!r}")
+        self.assertEqual(
+            recovered,
+            original,
+            f"Round-trip failed. Original: {original!r}, Recovered: {recovered!r}",
+        )
 
     def test_encode_decode_empty(self):
         """Test encoding empty payload."""
-        original = b''
+        original = b""
 
         cover = encode(original, self.mock_client, self.prompt, k=16)
 
@@ -204,7 +206,7 @@ class TestBaseKSteganography(unittest.TestCase):
 
     def test_all_zeros(self):
         """Test encoding data that is all zeros."""
-        original = b'\x00\x00\x00\x00'
+        original = b"\x00\x00\x00\x00"
 
         cover = encode(original, self.mock_client, self.prompt, k=16)
 
@@ -214,7 +216,7 @@ class TestBaseKSteganography(unittest.TestCase):
 
     def test_all_ones(self):
         """Test encoding data that is all 0xFF."""
-        original = b'\xff\xff\xff\xff'
+        original = b"\xff\xff\xff\xff"
 
         cover = encode(original, self.mock_client, self.prompt, k=16)
 
@@ -224,7 +226,7 @@ class TestBaseKSteganography(unittest.TestCase):
 
     def test_different_k_values(self):
         """Test with different K values."""
-        original = b'Test'
+        original = b"Test"
 
         for k in [4, 8, 16, 32]:
             cover = encode(original, self.mock_client, self.prompt, k=k)
@@ -327,86 +329,100 @@ class TestKnockEncodeDecode(unittest.TestCase):
 
     def test_encode_decode_with_knock_small(self):
         """Test full encode/decode cycle with knock sequence."""
-        original = b'Hi!'
+        original = b"Hi!"
 
         cover = encode_with_knock(
-            original, self.mock_client, self.prompt, k=16,
-            knock=self.knock, preamble_tokens=5, suffix_tokens=5
+            original,
+            self.mock_client,
+            self.prompt,
+            k=16,
+            knock=self.knock,
+            preamble_tokens=5,
+            suffix_tokens=5,
         )
 
         self.assertIsInstance(cover, str)
         self.assertGreater(len(cover), 0)
 
-        recovered = decode_with_knock(
-            cover, self.mock_client, k=16,
-            knock=self.knock
-        )
+        recovered = decode_with_knock(cover, self.mock_client, k=16, knock=self.knock)
 
-        self.assertEqual(recovered, original,
-                        f"Round-trip failed. Original: {original!r}, Recovered: {recovered!r}")
+        self.assertEqual(
+            recovered,
+            original,
+            f"Round-trip failed. Original: {original!r}, Recovered: {recovered!r}",
+        )
 
     def test_encode_decode_with_knock_longer(self):
         """Test knock encode/decode with longer payload."""
-        original = b'Secret message for testing!'
+        original = b"Secret message for testing!"
 
         cover = encode_with_knock(
-            original, self.mock_client, self.prompt, k=16,
-            knock=self.knock, preamble_tokens=10, suffix_tokens=10
+            original,
+            self.mock_client,
+            self.prompt,
+            k=16,
+            knock=self.knock,
+            preamble_tokens=10,
+            suffix_tokens=10,
         )
 
-        recovered = decode_with_knock(
-            cover, self.mock_client, k=16,
-            knock=self.knock
-        )
+        recovered = decode_with_knock(cover, self.mock_client, k=16, knock=self.knock)
 
         self.assertEqual(recovered, original)
 
     def test_encode_decode_with_knock_empty(self):
         """Test knock mode with empty payload."""
-        original = b''
+        original = b""
 
         cover = encode_with_knock(
-            original, self.mock_client, self.prompt, k=16,
-            knock=self.knock, preamble_tokens=5, suffix_tokens=5
+            original,
+            self.mock_client,
+            self.prompt,
+            k=16,
+            knock=self.knock,
+            preamble_tokens=5,
+            suffix_tokens=5,
         )
 
-        recovered = decode_with_knock(
-            cover, self.mock_client, k=16,
-            knock=self.knock
-        )
+        recovered = decode_with_knock(cover, self.mock_client, k=16, knock=self.knock)
 
         self.assertEqual(recovered, original)
 
     def test_decode_without_knock_fails(self):
         """Test that decoding fails with wrong knock sequence."""
-        original = b'Test'
+        original = b"Test"
 
         cover = encode_with_knock(
-            original, self.mock_client, self.prompt, k=16,
-            knock=self.knock, preamble_tokens=5, suffix_tokens=5
+            original,
+            self.mock_client,
+            self.prompt,
+            k=16,
+            knock=self.knock,
+            preamble_tokens=5,
+            suffix_tokens=5,
         )
 
         wrong_knock = [1, 2, 3, 4]
         with self.assertRaises(ValueError) as ctx:
-            decode_with_knock(
-                cover, self.mock_client, k=16,
-                knock=wrong_knock
-            )
+            decode_with_knock(cover, self.mock_client, k=16, knock=wrong_knock)
         self.assertIn("not found", str(ctx.exception))
 
     def test_preamble_and_suffix_present(self):
         """Test that cover text is longer than payload-only encoding."""
-        original = b'Hi!'
+        original = b"Hi!"
 
         # Encode without knock
-        cover_no_knock = encode(
-            original, self.mock_client, self.prompt, k=16
-        )
+        cover_no_knock = encode(original, self.mock_client, self.prompt, k=16)
 
         # Encode with knock (adds preamble + knock + suffix)
         cover_with_knock = encode_with_knock(
-            original, self.mock_client, self.prompt, k=16,
-            knock=self.knock, preamble_tokens=10, suffix_tokens=10
+            original,
+            self.mock_client,
+            self.prompt,
+            k=16,
+            knock=self.knock,
+            preamble_tokens=10,
+            suffix_tokens=10,
         )
 
         # Cover with knock should be longer
@@ -438,7 +454,7 @@ def run_quick_demo():
     if recovered == original:
         print("\n[SUCCESS] Round-trip successful!")
     else:
-        print(f"\n[FAILURE] Data mismatch!")
+        print("\n[FAILURE] Data mismatch!")
         print(f"  Expected: {original!r}")
         print(f"  Got:      {recovered!r}")
 

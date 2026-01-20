@@ -9,13 +9,11 @@ Supports:
 
 import math
 import os
-from typing import List, Optional
 from dataclasses import dataclass
 
 import httpx
 
 from utils import TokenProb
-
 
 DEFAULT_HOST = "http://192.168.1.12:1234/v1"
 DEFAULT_MODEL = "local-model"
@@ -53,10 +51,10 @@ class LlamaCppClient:
         """
         try:
             from llama_cpp import Llama
-        except ImportError:
+        except ImportError as e:
             raise ImportError(
                 "llama-cpp-python not installed. Install with: pip install llama-cpp-python"
-            )
+            ) from e
 
         if not os.path.exists(model_path):
             raise FileNotFoundError(
@@ -86,7 +84,7 @@ class LlamaCppClient:
 
     def close(self):
         """Release model resources."""
-        if hasattr(self, 'model'):
+        if hasattr(self, "model"):
             del self.model
 
     def __enter__(self):
@@ -98,7 +96,8 @@ class LlamaCppClient:
     def _recreate_model(self):
         """Recreate model to fix state corruption after many calls."""
         from llama_cpp import Llama
-        if hasattr(self, 'model'):
+
+        if hasattr(self, "model"):
             del self.model
         self.model = Llama(
             model_path=self._model_path,
@@ -109,7 +108,7 @@ class LlamaCppClient:
         )
         self._call_count = 0
 
-    def get_token_distribution(self, context: str) -> List[TokenProb]:
+    def get_token_distribution(self, context: str) -> list[TokenProb]:
         """
         Get probability distribution over next tokens.
 
@@ -122,7 +121,7 @@ class LlamaCppClient:
         try:
             # Reset model state to avoid corruption from previous calls
             self.model.reset()
-            self._call_count = getattr(self, '_call_count', 0) + 1
+            self._call_count = getattr(self, "_call_count", 0) + 1
 
             # Use temperature=1.0 to ensure we get logprobs even near EOS
             result = self.model.create_completion(
@@ -142,7 +141,7 @@ class LlamaCppClient:
                 output = []
                 for token, logprob in token_logprobs.items():
                     # Skip empty string (EOS token)
-                    if token == '':
+                    if token == "":
                         continue
                     prob = math.exp(logprob)
                     output.append(TokenProb(token=token, prob=prob))
@@ -159,14 +158,17 @@ class LlamaCppClient:
                 # Retry once
                 self.model.reset()
                 result = self.model.create_completion(
-                    context, max_tokens=1, logprobs=self.top_k, temperature=1.0,
+                    context,
+                    max_tokens=1,
+                    logprobs=self.top_k,
+                    temperature=1.0,
                 )
                 choice = result["choices"][0]
                 top_logprobs = choice.get("logprobs", {}).get("top_logprobs", [])
                 if top_logprobs and top_logprobs[0]:
                     output = []
                     for token, logprob in top_logprobs[0].items():
-                        if token == '':
+                        if token == "":
                             continue
                         output.append(TokenProb(token=token, prob=math.exp(logprob)))
                     if output:
@@ -184,19 +186,20 @@ class LlamaCppClient:
             return []
         except Exception as e:
             import sys
+
             print(f"Warning: Model error: {type(e).__name__}: {e}", file=sys.stderr)
             return []
 
-    def tokenize(self, text: str) -> List[str]:
+    def tokenize(self, text: str) -> list[str]:
         """Tokenize text using the model's tokenizer."""
-        token_ids = self.model.tokenize(text.encode('utf-8'))
+        token_ids = self.model.tokenize(text.encode("utf-8"))
         tokens = []
         for tid in token_ids:
             token_bytes = self.model.detokenize([tid])
             try:
-                token_str = token_bytes.decode('utf-8', errors='replace')
-            except:
-                token_str = token_bytes.decode('latin-1', errors='replace')
+                token_str = token_bytes.decode("utf-8", errors="replace")
+            except UnicodeDecodeError:
+                token_str = token_bytes.decode("latin-1", errors="replace")
             tokens.append(token_str)
         return tokens
 
@@ -204,11 +207,12 @@ class LlamaCppClient:
 @dataclass
 class LMConfig:
     """Configuration for LM Studio connection."""
+
     host: str = DEFAULT_HOST
     model: str = DEFAULT_MODEL
     top_logprobs: int = 10  # LM Studio Open Responses API limit
     temperature: float = 0.0  # Use 0 for deterministic distributions
-    seed: Optional[int] = 42
+    seed: int | None = 42
 
 
 class LMClient:
@@ -219,7 +223,7 @@ class LMClient:
     Requires LM Studio 0.3.39+.
     """
 
-    def __init__(self, config: Optional[LMConfig] = None):
+    def __init__(self, config: LMConfig | None = None):
         """
         Initialize the LM Studio client.
 
@@ -239,7 +243,7 @@ class LMClient:
     def __exit__(self, *args):
         self.close()
 
-    def get_token_distribution(self, context: str) -> List[TokenProb]:
+    def get_token_distribution(self, context: str) -> list[TokenProb]:
         """
         Get probability distribution over next tokens given context.
 
@@ -252,8 +256,8 @@ class LMClient:
             List of TokenProb with token and probability pairs
         """
         # Use Open Responses API - remove /v1 suffix if present, then add /v1/responses
-        base_host = self.config.host.rstrip('/')
-        if base_host.endswith('/v1'):
+        base_host = self.config.host.rstrip("/")
+        if base_host.endswith("/v1"):
             base_host = base_host[:-3]
         url = f"{base_host}/v1/responses"
 
@@ -321,7 +325,9 @@ class LMClient:
             return []
 
         except (KeyError, IndexError) as e:
-            raise RuntimeError(f"Failed to parse logprobs from response: {e}\nResponse: {data}")
+            raise RuntimeError(
+                f"Failed to parse logprobs from response: {e}\nResponse: {data}"
+            ) from e
 
 
 class MockLMClient:
@@ -343,11 +349,38 @@ class MockLMClient:
         self.seed = seed
         # Simple vocabulary of common words/tokens
         self.vocab = [
-            " the", " a", " an", " is", " was", " are", " were", " be",
-            " been", " being", " have", " has", " had", " do", " does",
-            " did", " will", " would", " could", " should", " may", " might",
-            " must", " shall", " can", " need", " dare", " ought", " used",
-            " to", " of", " in",
+            " the",
+            " a",
+            " an",
+            " is",
+            " was",
+            " are",
+            " were",
+            " be",
+            " been",
+            " being",
+            " have",
+            " has",
+            " had",
+            " do",
+            " does",
+            " did",
+            " will",
+            " would",
+            " could",
+            " should",
+            " may",
+            " might",
+            " must",
+            " shall",
+            " can",
+            " need",
+            " dare",
+            " ought",
+            " used",
+            " to",
+            " of",
+            " in",
         ][:vocab_size]
 
     def _hash_context(self, context: str) -> int:
@@ -357,15 +390,14 @@ class MockLMClient:
             h = ((h * 31) + ord(c)) & 0xFFFFFFFF
         return h
 
-    def get_token_distribution(self, context: str) -> List[TokenProb]:
+    def get_token_distribution(self, context: str) -> list[TokenProb]:
         """Generate deterministic distribution based on context."""
         h = self._hash_context(context)
 
         # Generate probabilities using the hash
         probs = []
-        remaining = 1.0
 
-        for i, token in enumerate(self.vocab):
+        for i, _token in enumerate(self.vocab):
             # Use hash to generate pseudo-random probability
             token_hash = ((h * (i + 1)) ^ (h >> 16)) & 0xFFFFFFFF
             # Zipf-like distribution: earlier tokens more likely
@@ -377,8 +409,7 @@ class MockLMClient:
         # Normalize
         total = sum(probs)
         result = [
-            TokenProb(token=self.vocab[i], prob=probs[i] / total)
-            for i in range(len(self.vocab))
+            TokenProb(token=self.vocab[i], prob=probs[i] / total) for i in range(len(self.vocab))
         ]
 
         # Sort by probability descending

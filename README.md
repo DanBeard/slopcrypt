@@ -21,18 +21,21 @@ Each token encodes `log2(K)` bits by selecting from the top-K most probable toke
 ## Quickstart
 
 ```bash
-# Install
+# Install (using uv)
+uv sync --all-extras
+
+# Or with pip
 pip install msgpack cryptography httpx llama-cpp-python
 
 # Generate a secret
-python stego_secret.py generate-secret -o my.secret
+uv run python stego_secret.py generate-secret -o my.secret
 
 # Encode (mock client for testing)
-echo "Meet at the usual place" | python stego_secret.py encode --secret my.secret --mock
+echo "Meet at the usual place" | uv run python stego_secret.py encode --secret my.secret --mock
 
 # Roundtrip
-echo "Hello World" | python stego_secret.py encode --secret my.secret --mock \
-  | python stego_secret.py decode --secret my.secret --mock
+echo "Hello World" | uv run python stego_secret.py encode --secret my.secret --mock \
+  | uv run python stego_secret.py decode --secret my.secret --mock
 ```
 
 ## Use with a Real Model
@@ -44,18 +47,18 @@ The mock client is for testing. For actual steganography, use a real LLM:
 wget https://huggingface.co/HuggingFaceTB/SmolLM2-135M-Instruct-GGUF/resolve/main/smollm2-135m-instruct-q8_0.gguf
 
 # Encode
-echo "Secret data" | python stego_secret.py encode \
+echo "Secret data" | uv run python stego_secret.py encode \
   --secret my.secret --model-path smollm2-135m-instruct-q8_0.gguf -o cover.txt
 
 # Decode
-python stego_secret.py decode --secret my.secret \
+uv run python stego_secret.py decode --secret my.secret \
   --model-path smollm2-135m-instruct-q8_0.gguf -i cover.txt
 ```
 
 Or with LM Studio (0.3.39+):
 
 ```bash
-echo "Secret" | python stego_secret.py encode --secret my.secret \
+echo "Secret" | uv run python stego_secret.py encode --secret my.secret \
   --lmstudio --host http://localhost:1234/v1 --model llama-3.2-1b-instruct
 ```
 
@@ -90,22 +93,29 @@ Cover text structure:
 
 ```bash
 # Generate secret
-python stego_secret.py generate-secret -o FILE [--k K] [--knock INDICES]
+uv run python stego_secret.py generate-secret -o FILE [--k K] [--knock INDICES]
 
 # Encode
-python stego_secret.py encode --secret FILE [--model-path PATH | --lmstudio | --mock]
+uv run python stego_secret.py encode --secret FILE [--model-path PATH | --lmstudio | --mock]
 
 # Decode
-python stego_secret.py decode --secret FILE [--model-path PATH | --lmstudio | --mock]
+uv run python stego_secret.py decode --secret FILE [--model-path PATH | --lmstudio | --mock]
 
 # Inspect secret (for debugging)
-python stego_secret.py show-secret --secret FILE
+uv run python stego_secret.py show-secret --secret FILE
 ```
 
-## Tests
+## Development
 
 ```bash
-python -m pytest test_stego_secret.py test_stego.py -v
+# Run tests
+uv run pytest
+
+# Lint
+uv run ruff check .
+
+# Format
+uv run ruff format .
 ```
 
 ## Security Notes

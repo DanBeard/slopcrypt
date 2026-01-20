@@ -48,10 +48,21 @@ Message → Huffman compress → AES encrypt → Base-K encode into tokens
 - K must be power of 2
 - Token sorting is stable (-prob, then token string)
 
-## Dependencies
+## Setup
 
 ```bash
-pip install msgpack cryptography httpx llama-cpp-python pytest
+# Install dependencies
+uv sync --all-extras
+
+# Or just core + dev
+uv sync --extra dev
+
+# Run tests
+uv run pytest
+
+# Format/lint
+uv run ruff check .
+uv run ruff format .
 ```
 
 ## Research Philosophy

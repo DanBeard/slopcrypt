@@ -3,19 +3,20 @@ Shared utilities for LLM steganography.
 """
 
 from dataclasses import dataclass
-from typing import List, Optional, Tuple
 
 
 @dataclass
 class TokenProb:
     """A token with its probability."""
+
     token: str
     prob: float
 
 
 # Bit conversion utilities
 
-def bytes_to_bits(data: bytes) -> List[int]:
+
+def bytes_to_bits(data: bytes) -> list[int]:
     """Convert bytes to list of bits."""
     bits = []
     for byte in data:
@@ -24,7 +25,7 @@ def bytes_to_bits(data: bytes) -> List[int]:
     return bits
 
 
-def bits_to_bytes(bits: List[int]) -> bytes:
+def bits_to_bytes(bits: list[int]) -> bytes:
     """Convert list of bits to bytes."""
     # Pad to multiple of 8
     while len(bits) % 8 != 0:
@@ -39,7 +40,7 @@ def bits_to_bytes(bits: List[int]) -> bytes:
     return bytes(result)
 
 
-def bits_to_int(bits: List[int]) -> int:
+def bits_to_int(bits: list[int]) -> int:
     """Convert list of bits to integer."""
     value = 0
     for bit in bits:
@@ -47,7 +48,7 @@ def bits_to_int(bits: List[int]) -> int:
     return value
 
 
-def int_to_bits(value: int, num_bits: int) -> List[int]:
+def int_to_bits(value: int, num_bits: int) -> list[int]:
     """Convert integer to list of bits."""
     bits = []
     for i in range(num_bits - 1, -1, -1):
@@ -57,10 +58,11 @@ def int_to_bits(value: int, num_bits: int) -> List[int]:
 
 # Token utilities
 
+
 def filter_prefix_tokens(
-    dist: List[TokenProb],
+    dist: list[TokenProb],
     k: int,
-) -> List[TokenProb]:
+) -> list[TokenProb]:
     """
     Filter out tokens that are prefixes of other tokens, return top-k.
 
@@ -72,7 +74,7 @@ def filter_prefix_tokens(
     sorted_dist = sorted(dist, key=lambda x: (-x.prob, x.token))
 
     # Get all non-empty tokens
-    all_tokens = set(t.token for t in sorted_dist if t.token)
+    all_tokens = {t.token for t in sorted_dist if t.token}
 
     top_k = []
     for t in sorted_dist:
@@ -90,8 +92,8 @@ def filter_prefix_tokens(
 
 def find_longest_match(
     text: str,
-    tokens: List[TokenProb],
-) -> Tuple[Optional[TokenProb], int]:
+    tokens: list[TokenProb],
+) -> tuple[TokenProb | None, int]:
     """
     Find the longest token matching the start of text.
 
@@ -113,7 +115,8 @@ def find_longest_match(
 
 # Knock sequence utilities
 
-def parse_knock_sequence(knock_str: str, k: int) -> List[int]:
+
+def parse_knock_sequence(knock_str: str, k: int) -> list[int]:
     """
     Parse and validate knock sequence string.
 
@@ -133,11 +136,15 @@ def parse_knock_sequence(knock_str: str, k: int) -> List[int]:
     try:
         indices = [int(x.strip()) for x in knock_str.split(",")]
     except ValueError as e:
-        raise ValueError(f"Invalid knock sequence format: {e}")
+        raise ValueError(f"Invalid knock sequence format: {e}") from e
 
     if len(indices) < 4:
         import sys
-        print(f"Warning: Short knock sequence ({len(indices)} < 4) increases false positive risk", file=sys.stderr)
+
+        print(
+            f"Warning: Short knock sequence ({len(indices)} < 4) increases false positive risk",
+            file=sys.stderr,
+        )
 
     for idx in indices:
         if idx < 0:
@@ -148,7 +155,7 @@ def parse_knock_sequence(knock_str: str, k: int) -> List[int]:
     return indices
 
 
-def find_knock_sequence(indices: List[int], knock: List[int]) -> int:
+def find_knock_sequence(indices: list[int], knock: list[int]) -> int:
     """
     Find knock sequence in list of token indices.
 
@@ -164,12 +171,12 @@ def find_knock_sequence(indices: List[int], knock: List[int]) -> int:
 
     knock_len = len(knock)
     for i in range(len(indices) - knock_len + 1):
-        if indices[i:i + knock_len] == knock:
+        if indices[i : i + knock_len] == knock:
             return i
     return -1
 
 
-def check_knock_in_data(data_bits: List[int], knock: List[int], bits_per_token: int) -> bool:
+def check_knock_in_data(data_bits: list[int], knock: list[int], bits_per_token: int) -> bool:
     """
     Check if knock sequence would appear in encoded payload.
 
@@ -187,7 +194,7 @@ def check_knock_in_data(data_bits: List[int], knock: List[int], bits_per_token: 
     # Convert data bits to token indices
     indices = []
     for i in range(0, len(data_bits), bits_per_token):
-        chunk = data_bits[i:i + bits_per_token]
+        chunk = data_bits[i : i + bits_per_token]
         # Pad if needed
         while len(chunk) < bits_per_token:
             chunk.append(0)
