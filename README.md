@@ -1,126 +1,155 @@
 # LLM Steganography
 
-Hide binary data in LLM-generated text using Base-K encoding.
+Hide binary data in LLM-generated text using Base-K encoding with encrypted secrets.
+
+## Features
+
+- **Encrypted secrets**: Password-protected secret blob (PBKDF2 + AES-256-GCM)
+- **Payload encryption**: Encrypted payload defeats frequency analysis
+- **Huffman compression**: ~4-4.5 bits/char for English text
+- **Knock sequence**: Locates payload without needing exact prompt match
+- **Multiple backends**: Mock client, local GGUF models, LM Studio API
 
 ## Quickstart
 
 ### 1. Install dependencies
 
 ```bash
-pip install httpx llama-cpp-python
+pip install msgpack cryptography httpx llama-cpp-python pytest
 ```
 
-### 2. Basic usage (mock client for testing)
+### 2. Generate a secret
+
+```bash
+# Generate with password prompt
+python stego_secret.py generate-secret -o my.secret
+
+# Or with explicit password
+python stego_secret.py generate-secret -o my.secret --password mypassword
+
+# With custom parameters
+python stego_secret.py generate-secret -o my.secret --k 16 --knock 4,7,2,9,14,1
+```
+
+### 3. Encode and decode (mock client)
 
 ```bash
 # Encode a message
-echo "Secret message" | python stego_basek.py encode --mock
-
-# Full roundtrip - encode then decode
-echo "Hello World" | python stego_basek.py encode --mock | python stego_basek.py decode --mock
-```
-
-### 3. Encode a file
-
-```bash
-# Encode a file to cover text
-python stego_basek.py encode -i secret.txt -o cover.txt --mock
-
-# Decode back
-python stego_basek.py decode -i cover.txt -o recovered.txt --mock
-
-# Verify
-diff secret.txt recovered.txt
-```
-
-### 4. Use with LM Studio
-
-LM Studio 0.3.39+ supports logprobs via the Open Responses API.
-
-```bash
-# Encode with LM Studio (requires --model)
-echo "Secret" | python stego_basek.py encode \
-  --lmstudio --host http://localhost:1234/v1 --model llama-3.2-1b-instruct
+echo "Secret message" | python stego_secret.py encode --secret my.secret --mock
 
 # Full roundtrip
-echo "Hello World" | python stego_basek.py encode \
-  --lmstudio --host http://localhost:1234/v1 --model llama-3.2-1b-instruct \
-  | python stego_basek.py decode \
-  --lmstudio --host http://localhost:1234/v1 --model llama-3.2-1b-instruct
+echo "Hello World" | python stego_secret.py encode --secret my.secret --mock \
+  | python stego_secret.py decode --secret my.secret --mock
 ```
 
-**Notes:**
-- K is automatically set to 4 (2 bits/token) for reliability with LM Studio
-- Use non-reasoning models like `llama-3.2-1b-instruct`
-- Reasoning models (qwen3) need `/no_think` in the prompt and have less varied distributions
-- The cover text will look repetitive but decodes correctly
+### 4. Use with a local GGUF model
 
-### 5. Use with a local GGUF model
-
-Download a GGUF model:
+Download a model:
 ```bash
 wget https://huggingface.co/HuggingFaceTB/SmolLM2-135M-Instruct-GGUF/resolve/main/smollm2-135m-instruct-q8_0.gguf
 ```
 
 Encode/decode:
 ```bash
-python stego_basek.py encode -i secret.bin --model-path smollm2-135m-instruct-q8_0.gguf -o cover.txt
-python stego_basek.py decode -i cover.txt --model-path smollm2-135m-instruct-q8_0.gguf -o recovered.bin
+# Encode
+echo "Secret data" | python stego_secret.py encode \
+  --secret my.secret --model-path smollm2-135m-instruct-q8_0.gguf -o cover.txt
+
+# Decode
+python stego_secret.py decode --secret my.secret \
+  --model-path smollm2-135m-instruct-q8_0.gguf -i cover.txt
+```
+
+### 5. Use with LM Studio
+
+LM Studio 0.3.39+ supports logprobs via the Open Responses API.
+
+```bash
+# Encode
+echo "Secret" | python stego_secret.py encode --secret my.secret \
+  --lmstudio --host http://localhost:1234/v1 --model llama-3.2-1b-instruct
+
+# Decode
+python stego_secret.py decode --secret my.secret \
+  --lmstudio --host http://localhost:1234/v1 --model llama-3.2-1b-instruct -i cover.txt
 ```
 
 ## How it works
 
-Base-K steganography maps each `log2(K)` bits of your data to one of the top-K most likely tokens from the LLM's probability distribution. With the default K=16, each token encodes 4 bits.
+### Base-K Encoding
 
-The encoder and decoder must use the same:
-- Model (or mock client)
-- Prompt
-- K value
+Each `log2(K)` bits of data maps to one of the top-K most likely tokens from the LLM's probability distribution. With K=16 (default), each token encodes 4 bits.
 
-## Options
+### Secret Blob
 
-```
-usage: stego_basek.py [-h] [-i INPUT] [-o OUTPUT] [-k K] [--prompt PROMPT]
-                      [--model-path MODEL_PATH] [--lmstudio] [--host HOST]
-                      [--model MODEL] [--mock] [-v]
-                      {encode,decode}
+The secret contains all parameters needed for encoding/decoding:
 
-Arguments:
-  {encode,decode}       Operation mode
-
-Options:
-  -i, --input           Input file (default: stdin)
-  -o, --output          Output file (default: stdout)
-  -k K                  Top-K tokens to use (default: 16, must be power of 2)
-  --prompt PROMPT       Initial prompt for generation
-  --model-path PATH     Path to GGUF model file (for llama-cpp-python)
-  --lmstudio            Use LM Studio API instead of local model
-  --host URL            LM Studio API URL (default: http://192.168.1.12:1234/v1)
-  --model MODEL         Model name for LM Studio (e.g., llama-3.2-1b-instruct)
-  --mock                Use mock client (for testing)
-  -v, --verbose         Show progress
+```python
+{
+    'version': 2,
+    'knock': [4, 7, 2, 9, 14, 1],  # Locates payload in cover text
+    'k': 16,                        # Top-K tokens (bits per token = log2(k))
+    'payload_key': <32 bytes>,      # AES-256 key for payload encryption
+    'preamble_tokens': 10,          # Natural tokens before knock
+    'suffix_tokens': 10,            # Natural tokens after payload
+    'temperature': 0.8,
+    'huffman_freq': {...},          # Compression frequencies
+}
 ```
 
-## Examples
+### Encoding Flow
+
+```
+Message → Huffman compress → AES-256-GCM encrypt → Base-K encode
+
+Cover text structure:
+[Prompt] → [Preamble] → [Knock sequence] → [Length + Encrypted payload] → [Suffix]
+```
+
+The knock sequence allows the decoder to locate the payload without needing the exact prompt.
+
+## CLI Reference
+
+### stego_secret.py (recommended)
 
 ```bash
-# Encode with higher capacity (5 bits/token, mock only - LM Studio limited to K=8)
-echo "data" | python stego_basek.py encode --mock -k 32
+# Generate secret
+python stego_secret.py generate-secret -o FILE [--k K] [--knock INDICES] [--password PASS]
 
-# Encode with verbose output
-python stego_basek.py encode -i secret.bin --mock -v
+# Encode message
+python stego_secret.py encode --secret FILE [--model-path PATH | --lmstudio | --mock]
+  [-i INPUT] [-o OUTPUT] [--prompt PROMPT] [--password PASS]
 
-# Use custom prompt (must match for encode and decode!)
-echo "Hi" | python stego_basek.py encode --mock --prompt "Once upon a time" \
-  | python stego_basek.py decode --mock --prompt "Once upon a time"
+# Decode message
+python stego_secret.py decode --secret FILE [--model-path PATH | --lmstudio | --mock]
+  [-i INPUT] [-o OUTPUT] [--password PASS]
 
-# Use LM Studio with a specific model
-echo "Secret data" | python stego_basek.py encode \
-  --lmstudio --host http://localhost:1234/v1 --model llama-3.2-1b-instruct
+# Show secret parameters
+python stego_secret.py show-secret --secret FILE [--password PASS]
+```
+
+### stego_basek.py (low-level)
+
+For debugging or direct access to the base-K encoding:
+
+```bash
+python stego_basek.py encode [--knock INDICES] [--preamble N] [--suffix N] ...
+python stego_basek.py decode [--knock INDICES] ...
 ```
 
 ## Run tests
 
 ```bash
-python test_stego.py
+# All tests
+python -m pytest test_stego_secret.py test_stego.py -v
+
+# Just the secret wrapper tests
+python -m pytest test_stego_secret.py -v
 ```
+
+## Security Notes
+
+- Secret blob is encrypted with AES-256-GCM using a PBKDF2-derived key (600k iterations)
+- Payload is separately encrypted with AES-256-GCM using a random key stored in the secret
+- Huffman compression happens before encryption (no frequency analysis possible)
+- The knock sequence and K value must remain secret for security

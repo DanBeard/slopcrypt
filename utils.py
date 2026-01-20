@@ -68,7 +68,8 @@ def filter_prefix_tokens(
     could match when a longer one was intended.
     """
     # Sort by probability descending
-    sorted_dist = sorted(dist, key=lambda x: x.prob, reverse=True)
+    # Sort by probability descending, then by token string for deterministic ordering
+    sorted_dist = sorted(dist, key=lambda x: (-x.prob, x.token))
 
     # Get all non-empty tokens
     all_tokens = set(t.token for t in sorted_dist if t.token)

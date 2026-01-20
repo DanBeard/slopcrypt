@@ -148,7 +148,9 @@ class LlamaCppClient:
                     output.append(TokenProb(token=token, prob=prob))
 
                 if output:
-                    output.sort(key=lambda x: x.prob, reverse=True)
+                    # Sort by probability descending, then by token string for stability
+                    # This ensures deterministic ordering when probabilities are equal
+                    output.sort(key=lambda x: (-x.prob, x.token))
                     return output
 
             # Fallback if no logprobs - try recreating model (fixes state corruption)
@@ -168,7 +170,8 @@ class LlamaCppClient:
                             continue
                         output.append(TokenProb(token=token, prob=math.exp(logprob)))
                     if output:
-                        output.sort(key=lambda x: x.prob, reverse=True)
+                        # Sort by probability descending, then by token string for stability
+                        output.sort(key=lambda x: (-x.prob, x.token))
                         return output
 
             token = choice.get("text", "")
@@ -176,9 +179,12 @@ class LlamaCppClient:
                 return [TokenProb(token=token, prob=0.99)]
             return []
 
+        except AssertionError:
+            # Expected for empty context - llama.cpp requires at least one token
+            return []
         except Exception as e:
             import sys
-            print(f"Warning: Model error: {e}", file=sys.stderr)
+            print(f"Warning: Model error: {type(e).__name__}: {e}", file=sys.stderr)
             return []
 
     def tokenize(self, text: str) -> List[str]:

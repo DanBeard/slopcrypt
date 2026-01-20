@@ -347,6 +347,7 @@ def decode_with_knock(
     client,
     k: int,
     knock: list[int],
+    prompt: str = "",
     verbose: bool = False,
 ) -> bytes:
     """
@@ -358,12 +359,25 @@ def decode_with_knock(
     4. Once found, decode payload starting after knock
     5. Stop at length header boundary
 
-    No prompt needed - the cover text contains everything.
+    Args:
+        cover_text: Full cover text (may include prompt)
+        client: LLM client
+        k: Number of top tokens to consider
+        knock: Knock sequence to find
+        prompt: Optional prompt to strip from cover text (for correct context)
+        verbose: Print debug info
     """
     bits_per_token = int(math.log2(k))
 
-    context = ""
-    remaining = cover_text
+    # If prompt provided and cover_text starts with it, strip prompt and use as context
+    if prompt and cover_text.startswith(prompt):
+        context = prompt
+        remaining = cover_text[len(prompt):]
+        if verbose:
+            print(f"Stripped prompt ({len(prompt)} chars), starting with generated tokens", file=sys.stderr)
+    else:
+        context = ""
+        remaining = cover_text
     token_indices = []
     token_positions = []  # Track where each token ends in cover_text
     token_count = 0
@@ -376,9 +390,20 @@ def decode_with_knock(
     while remaining:
         dist = client.get_token_distribution(context)
         if not dist:
-            break
+            # Empty distribution (e.g., model error for empty context) - skip character
+            context += remaining[0]
+            remaining = remaining[1:]
+            consumed += 1
+            continue
 
         top_k = filter_prefix_tokens(dist, k)
+
+        if not top_k:
+            # No tokens after filtering - skip character
+            context += remaining[0]
+            remaining = remaining[1:]
+            consumed += 1
+            continue
 
         matched, matched_index = find_longest_match(remaining, top_k)
 
