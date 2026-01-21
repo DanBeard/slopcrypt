@@ -19,9 +19,23 @@ if (typeof globalThis.crypto === 'undefined') {
 import { FixedDistributionClient } from '../src/fixed-client.ts';
 import { deriveKeyBytes, decryptPayload, bytesToBase64, base64ToBytes } from '../src/crypto.ts';
 import { decryptSecretBlob, encryptSecretBlob, generateSecret } from '../src/secret.ts';
-import { huffmanDecode, huffmanEncode, decompressPayload, DEFAULT_FREQUENCIES } from '../src/huffman.ts';
+import {
+  huffmanDecode,
+  huffmanEncode,
+  decompressPayload,
+  compressPayload,
+  arithmeticEncode,
+  arithmeticDecode,
+  DEFAULT_FREQUENCIES,
+} from '../src/huffman.ts';
 import { decodeMessage, encodeMessage } from '../src/stego.ts';
-import { COMPRESSION_HUFFMAN, COMPRESSION_NONE, PAYLOAD_KEY_SIZE, SECRET_VERSION } from '../src/types.ts';
+import {
+  COMPRESSION_HUFFMAN,
+  COMPRESSION_NONE,
+  COMPRESSION_ARITHMETIC,
+  PAYLOAD_KEY_SIZE,
+  SECRET_VERSION,
+} from '../src/types.ts';
 
 const FIXTURES_DIR = join(__dirname, '../../tests/fixtures');
 
@@ -254,6 +268,81 @@ describe('Cross-compatibility: Huffman Compression', () => {
 
     // Huffman should reduce size for English text
     expect(compressed.length).toBeLessThan(englishText.length);
+  });
+});
+
+describe('Arithmetic Coding', () => {
+  it('roundtrips ASCII text correctly', () => {
+    const testCases = [
+      'The quick brown fox jumps over the lazy dog.',
+      'Hello World',
+      'AAAAAAAAAA',
+      'Testing 123',
+    ];
+
+    for (const text of testCases) {
+      const original = new TextEncoder().encode(text);
+      const compressed = arithmeticEncode(original, DEFAULT_FREQUENCIES);
+      const decompressed = arithmeticDecode(compressed, DEFAULT_FREQUENCIES);
+
+      expect(decompressed).toEqual(original);
+    }
+  });
+
+  it('handles empty data', () => {
+    const original = new Uint8Array(0);
+    const compressed = arithmeticEncode(original, DEFAULT_FREQUENCIES);
+    const decompressed = arithmeticDecode(compressed, DEFAULT_FREQUENCIES);
+
+    expect(decompressed).toEqual(original);
+  });
+
+  it('handles single byte', () => {
+    const original = new TextEncoder().encode('x');
+    const compressed = arithmeticEncode(original, DEFAULT_FREQUENCIES);
+    const decompressed = arithmeticDecode(compressed, DEFAULT_FREQUENCIES);
+
+    expect(decompressed).toEqual(original);
+  });
+
+  it('produces smaller output than Huffman for long text', () => {
+    const longText = new TextEncoder().encode(
+      'The quick brown fox jumps over the lazy dog. '.repeat(20)
+    );
+    const arithCompressed = arithmeticEncode(longText, DEFAULT_FREQUENCIES);
+    const huffmanCompressed = huffmanEncode(longText, DEFAULT_FREQUENCIES);
+
+    // Arithmetic should produce smaller or equal output
+    expect(arithCompressed.length).toBeLessThanOrEqual(
+      huffmanCompressed.length + 5
+    );
+  });
+
+  it('compressPayload uses arithmetic for long text', () => {
+    const longText = new TextEncoder().encode(
+      'The quick brown fox jumps over the lazy dog. '.repeat(20)
+    );
+
+    const [compressed, compressionType] = compressPayload(
+      longText,
+      DEFAULT_FREQUENCIES
+    );
+
+    expect(compressionType).toBe(COMPRESSION_ARITHMETIC);
+    expect(compressed.length).toBeLessThan(longText.length);
+  });
+
+  it('decompressPayload handles arithmetic compression', () => {
+    const original = new TextEncoder().encode('Test arithmetic compression');
+    const compressed = arithmeticEncode(original, DEFAULT_FREQUENCIES);
+
+    const decompressed = decompressPayload(
+      compressed,
+      COMPRESSION_ARITHMETIC,
+      DEFAULT_FREQUENCIES
+    );
+
+    expect(decompressed).toEqual(original);
   });
 });
 

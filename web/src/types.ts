@@ -37,6 +37,7 @@ export interface Secret {
  */
 export const COMPRESSION_NONE = 0;
 export const COMPRESSION_HUFFMAN = 1;
+export const COMPRESSION_ARITHMETIC = 2;
 
 /**
  * Crypto constants.
