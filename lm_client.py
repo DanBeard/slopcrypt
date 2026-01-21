@@ -515,3 +515,82 @@ class MockLMClient:
 
     def __exit__(self, *args):
         pass
+
+
+class FixedDistributionClient:
+    """
+    LM client that returns a fixed, deterministic distribution.
+
+    Used for cross-language compatibility testing where Python and TypeScript
+    implementations must produce identical results. Unlike mock clients which
+    use context-dependent hashing (which differs between languages), this
+    client always returns the same hard-coded distribution.
+    """
+
+    # 32 tokens with probabilities summing to 1.0
+    # These are sorted by probability descending, then by token string.
+    # MUST be identical to TypeScript's FixedDistributionClient.FIXED_VOCAB
+    FIXED_VOCAB: list[tuple[str, float]] = [
+        (" the", 0.12),
+        (" a", 0.10),
+        (" to", 0.08),
+        (" and", 0.07),
+        (" of", 0.06),
+        (" in", 0.05),
+        (" is", 0.045),
+        (" that", 0.04),
+        (" it", 0.035),
+        (" for", 0.03),
+        (" was", 0.028),
+        (" on", 0.026),
+        (" with", 0.024),
+        (" as", 0.022),
+        (" be", 0.02),
+        (" at", 0.018),
+        (" by", 0.016),
+        (" this", 0.015),
+        (" from", 0.014),
+        (" or", 0.013),
+        (" an", 0.012),
+        (" but", 0.011),
+        (" not", 0.010),
+        (" are", 0.009),
+        (" have", 0.008),
+        (" were", 0.007),
+        (" been", 0.006),
+        (" has", 0.005),
+        (" their", 0.004),
+        (" which", 0.003),
+        (" when", 0.002),
+        (" there", 0.001),
+    ]
+
+    def __init__(self, vocab_size: int = 32):
+        """
+        Initialize fixed distribution client.
+
+        Args:
+            vocab_size: Number of tokens to return (max 32)
+        """
+        self.vocab_size = min(vocab_size, len(self.FIXED_VOCAB))
+
+    def get_token_distribution(self, context: str) -> list[TokenProb]:
+        """
+        Return fixed distribution regardless of context.
+
+        The distribution is always the same, ensuring identical behavior
+        across Python and TypeScript implementations.
+        """
+        return [
+            TokenProb(token=token, prob=prob)
+            for token, prob in self.FIXED_VOCAB[: self.vocab_size]
+        ]
+
+    def close(self):
+        pass
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        pass

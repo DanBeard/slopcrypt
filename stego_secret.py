@@ -344,12 +344,17 @@ class HuffmanNode:
     """Node in Huffman tree."""
 
     freq: int
+    seq: int = 0  # Sequence number for deterministic tie-breaking
     byte: int | None = None  # None for internal nodes
     left: Optional["HuffmanNode"] = None
     right: Optional["HuffmanNode"] = None
 
     def __lt__(self, other):
-        return self.freq < other.freq
+        # Compare by frequency first, then by sequence number for deterministic ordering
+        # This matches TypeScript's PriorityQueue behavior
+        if self.freq != other.freq:
+            return self.freq < other.freq
+        return self.seq < other.seq
 
 
 def build_huffman_tree(frequencies: dict[int, int]) -> HuffmanNode | None:
@@ -357,15 +362,21 @@ def build_huffman_tree(frequencies: dict[int, int]) -> HuffmanNode | None:
     if not frequencies:
         return None
 
-    # Create leaf nodes
-    heap = [HuffmanNode(freq=freq, byte=byte) for byte, freq in frequencies.items()]
+    # Create leaf nodes - sort by byte value for deterministic cross-language compatibility
+    # This ensures Python and TypeScript build identical trees regardless of dict iteration order
+    sorted_items = sorted(frequencies.items(), key=lambda x: x[0])
+    # Assign sequence numbers for deterministic tie-breaking when frequencies are equal
+    heap = [HuffmanNode(freq=freq, seq=i, byte=byte) for i, (byte, freq) in enumerate(sorted_items)]
     heapq.heapify(heap)
+    # Track sequence counter for internal nodes
+    seq_counter = len(heap)
 
     # Build tree
     while len(heap) > 1:
         left = heapq.heappop(heap)
         right = heapq.heappop(heap)
-        internal = HuffmanNode(freq=left.freq + right.freq, left=left, right=right)
+        internal = HuffmanNode(freq=left.freq + right.freq, seq=seq_counter, left=left, right=right)
+        seq_counter += 1
         heapq.heappush(heap, internal)
 
     return heap[0] if heap else None

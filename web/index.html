@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SlopCrypt Web</title>
+  <style>
+    :root {
+      --bg: #1a1a2e;
+      --surface: #16213e;
+      --primary: #e94560;
+      --secondary: #0f3460;
+      --text: #eee;
+      --text-muted: #888;
+      --border: #333;
+      --success: #4ade80;
+      --error: #f87171;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      line-height: 1.6;
+    }
+
+    .container {
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 2rem;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 2rem;
+    }
+
+    h1 {
+      font-size: 2rem;
+      color: var(--primary);
+      margin-bottom: 0.5rem;
+    }
+
+    .tagline {
+      color: var(--text-muted);
+      font-size: 0.9rem;
+    }
+
+    .tabs {
+      display: flex;
+      gap: 0.5rem;
+      margin-bottom: 1.5rem;
+      border-bottom: 2px solid var(--border);
+      padding-bottom: 0.5rem;
+    }
+
+    .tab {
+      padding: 0.5rem 1rem;
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 1rem;
+      transition: all 0.2s;
+    }
+
+    .tab:hover {
+      color: var(--text);
+    }
+
+    .tab.active {
+      color: var(--primary);
+      border-bottom: 2px solid var(--primary);
+      margin-bottom: -2px;
+    }
+
+    .panel {
+      display: none;
+    }
+
+    .panel.active {
+      display: block;
+    }
+
+    .card {
+      background: var(--surface);
+      border-radius: 8px;
+      padding: 1.5rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .card h2 {
+      font-size: 1.2rem;
+      margin-bottom: 1rem;
+      color: var(--primary);
+    }
+
+    .form-group {
+      margin-bottom: 1rem;
+    }
+
+    label {
+      display: block;
+      margin-bottom: 0.3rem;
+      color: var(--text-muted);
+      font-size: 0.85rem;
+    }
+
+    input, textarea, select {
+      width: 100%;
+      padding: 0.6rem;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      color: var(--text);
+      font-family: inherit;
+      font-size: 0.9rem;
+    }
+
+    input:focus, textarea:focus, select:focus {
+      outline: none;
+      border-color: var(--primary);
+    }
+
+    textarea {
+      min-height: 100px;
+      resize: vertical;
+    }
+
+    .checkbox-group {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .checkbox-group input {
+      width: auto;
+    }
+
+    button {
+      padding: 0.7rem 1.5rem;
+      background: var(--primary);
+      border: none;
+      border-radius: 4px;
+      color: white;
+      font-family: inherit;
+      font-size: 0.9rem;
+      cursor: pointer;
+      transition: opacity 0.2s;
+    }
+
+    button:hover {
+      opacity: 0.9;
+    }
+
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    button.secondary {
+      background: var(--secondary);
+    }
+
+    .button-row {
+      display: flex;
+      gap: 0.5rem;
+      margin-top: 1rem;
+    }
+
+    .progress {
+      background: var(--bg);
+      border-radius: 4px;
+      height: 8px;
+      overflow: hidden;
+      margin: 1rem 0;
+    }
+
+    .progress-bar {
+      height: 100%;
+      background: var(--primary);
+      width: 0%;
+      transition: width 0.3s;
+    }
+
+    .status {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      margin-top: 0.5rem;
+    }
+
+    .status.success {
+      color: var(--success);
+    }
+
+    .status.error {
+      color: var(--error);
+    }
+
+    .output {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 1rem;
+      max-height: 300px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      word-break: break-all;
+      font-size: 0.85rem;
+    }
+
+    .secret-info {
+      background: var(--bg);
+      border-radius: 4px;
+      padding: 1rem;
+      font-size: 0.85rem;
+    }
+
+    .secret-info dt {
+      color: var(--text-muted);
+      display: inline;
+    }
+
+    .secret-info dd {
+      display: inline;
+      margin-left: 0.5rem;
+    }
+
+    .secret-info div {
+      margin-bottom: 0.3rem;
+    }
+
+    .model-status {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      margin-bottom: 1rem;
+      padding: 0.5rem;
+      background: var(--bg);
+      border-radius: 4px;
+    }
+
+    .model-status .indicator {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--text-muted);
+    }
+
+    .model-status.loaded .indicator {
+      background: var(--success);
+    }
+
+    .model-status.loading .indicator {
+      background: var(--primary);
+      animation: pulse 1s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+
+    .hint {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      margin-top: 0.3rem;
+    }
+
+    .row {
+      display: flex;
+      gap: 1rem;
+    }
+
+    .row > * {
+      flex: 1;
+    }
+
+    @media (max-width: 600px) {
+      .row {
+        flex-direction: column;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>SlopCrypt Web</h1>
+      <p class="tagline">Hide your data in slop! Browser-based LLM steganography.</p>
+    </header>
+
+    <div class="tabs">
+      <button class="tab active" data-tab="encode">Encode</button>
+      <button class="tab" data-tab="decode">Decode</button>
+      <button class="tab" data-tab="secret">Manage Secret</button>
+    </div>
+
+    <!-- Model Status -->
+    <div class="model-status" id="modelStatus">
+      <div class="indicator"></div>
+      <span id="modelStatusText">Model not loaded</span>
+      <button id="loadModelBtn" class="secondary" style="margin-left: auto;">Load Model</button>
+    </div>
+
+    <!-- Encode Panel -->
+    <div class="panel active" id="encodePanel">
+      <div class="card">
+        <h2>Encode Message</h2>
+
+        <div class="form-group">
+          <label for="encodeMessage">Message to hide</label>
+          <textarea id="encodeMessage" placeholder="Enter your secret message..."></textarea>
+        </div>
+
+        <div class="form-group">
+          <label for="encodePrompt">Prompt (start of cover text)</label>
+          <textarea id="encodePrompt" rows="2">Write a short story about a traveler:
+
+The weary traveler had been walking for</textarea>
+        </div>
+
+        <div class="checkbox-group">
+          <input type="checkbox" id="encodeMock" checked>
+          <label for="encodeMock">Use mock client (no model needed, for testing)</label>
+        </div>
+
+        <div class="button-row">
+          <button id="encodeBtn">Encode</button>
+          <button id="copyEncoded" class="secondary" disabled>Copy to Clipboard</button>
+        </div>
+
+        <div class="progress" id="encodeProgress" style="display: none;">
+          <div class="progress-bar" id="encodeProgressBar"></div>
+        </div>
+        <div class="status" id="encodeStatus"></div>
+
+        <div class="form-group" style="margin-top: 1rem;">
+          <label>Cover Text Output</label>
+          <div class="output" id="encodeOutput"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Decode Panel -->
+    <div class="panel" id="decodePanel">
+      <div class="card">
+        <h2>Decode Message</h2>
+
+        <div class="form-group">
+          <label for="decodeCover">Cover text to decode</label>
+          <textarea id="decodeCover" placeholder="Paste cover text here..."></textarea>
+        </div>
+
+        <div class="form-group">
+          <label for="decodePrompt">Prompt (if different from default)</label>
+          <textarea id="decodePrompt" rows="2">Write a short story about a traveler:
+
+The weary traveler had been walking for</textarea>
+        </div>
+
+        <div class="checkbox-group">
+          <input type="checkbox" id="decodeMock" checked>
+          <label for="decodeMock">Use mock client</label>
+        </div>
+
+        <div class="button-row">
+          <button id="decodeBtn">Decode</button>
+        </div>
+
+        <div class="progress" id="decodeProgress" style="display: none;">
+          <div class="progress-bar" id="decodeProgressBar"></div>
+        </div>
+        <div class="status" id="decodeStatus"></div>
+
+        <div class="form-group" style="margin-top: 1rem;">
+          <label>Decoded Message</label>
+          <div class="output" id="decodeOutput"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Secret Panel -->
+    <div class="panel" id="secretPanel">
+      <div class="card">
+        <h2>Generate New Secret</h2>
+
+        <div class="row">
+          <div class="form-group">
+            <label for="secretK">K (tokens per step)</label>
+            <select id="secretK">
+              <option value="4">4 (2 bits/token)</option>
+              <option value="8">8 (3 bits/token)</option>
+              <option value="16" selected>16 (4 bits/token)</option>
+              <option value="32">32 (5 bits/token)</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="secretPreamble">Preamble tokens</label>
+            <input type="number" id="secretPreamble" value="10" min="0" max="100">
+          </div>
+          <div class="form-group">
+            <label for="secretSuffix">Suffix tokens</label>
+            <input type="number" id="secretSuffix" value="10" min="0" max="100">
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="secretPassword">Password</label>
+          <input type="password" id="secretPassword" placeholder="Enter password...">
+          <div class="hint">Used to encrypt the secret blob</div>
+        </div>
+
+        <div class="form-group">
+          <label for="secretNotes">Notes (optional)</label>
+          <input type="text" id="secretNotes" placeholder="e.g., 'For project X'">
+        </div>
+
+        <div class="button-row">
+          <button id="generateSecretBtn">Generate Secret</button>
+        </div>
+
+        <div class="status" id="secretStatus"></div>
+      </div>
+
+      <div class="card">
+        <h2>Load Existing Secret</h2>
+
+        <div class="form-group">
+          <label for="secretBlob">Secret blob (base64)</label>
+          <textarea id="secretBlob" placeholder="Paste secret blob here..."></textarea>
+        </div>
+
+        <div class="form-group">
+          <label for="loadPassword">Password</label>
+          <input type="password" id="loadPassword" placeholder="Enter password...">
+        </div>
+
+        <div class="button-row">
+          <button id="loadSecretBtn">Load Secret</button>
+          <button id="exportSecretBtn" class="secondary" disabled>Export Secret</button>
+        </div>
+
+        <div class="status" id="loadStatus"></div>
+      </div>
+
+      <div class="card" id="secretInfoCard" style="display: none;">
+        <h2>Current Secret</h2>
+        <div class="secret-info" id="secretInfo"></div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>

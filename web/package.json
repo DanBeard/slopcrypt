@@ -1,0 +1,25 @@
+{
+  "name": "slopcrypt-web",
+  "version": "0.1.0",
+  "description": "Browser-based LLM steganography using wllama",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "generate-fixtures": "npx tsx test/generate-fixtures.ts"
+  },
+  "dependencies": {
+    "@wllama/wllama": "^2.3.7",
+    "@msgpack/msgpack": "^3.0.0-beta2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.7.0",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.11",
+    "vitest": "^2.0.0"
+  }
+}
