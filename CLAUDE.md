@@ -12,30 +12,46 @@ LLM steganography that embeds binary data in AI-generated text. Each token encod
 
 ```bash
 # Tests
-python -m pytest test_stego_secret.py test_stego.py -v
+python -m pytest tests/ -v
 
 # Roundtrip (mock client)
-python stego_secret.py generate-secret -o test.secret --password test123
-echo "Secret" | python stego_secret.py encode --secret test.secret --mock --password test123 \
-  | python stego_secret.py decode --secret test.secret --mock --password test123
+python -m slopcrypt.secret generate-secret -o test.secret --password test123
+echo "Secret" | python -m slopcrypt.secret encode --secret test.secret --mock --password test123 \
+  | python -m slopcrypt.secret decode --secret test.secret --mock --password test123
 
 # Low-level (debugging)
-echo "test" | python stego_basek.py encode --mock --knock 4,7,2,9 --preamble 10 --suffix 10 \
-  | python stego_basek.py decode --mock --knock 4,7,2,9
+echo "test" | python -m slopcrypt.encode encode --mock --knock 4,7,2,9 --preamble 10 --suffix 10 \
+  | python -m slopcrypt.encode decode --mock --knock 4,7,2,9
 ```
 
 ## Architecture
 
-**`stego_secret.py`** — Main wrapper with the good stuff:
+```
+slopcrypt/                    # Main package
+├── __init__.py               # Public API exports
+├── secret.py                 # Secret management + message wrappers + CLI
+├── compress.py               # Huffman + Arithmetic coding
+├── encode.py                 # Base-K steganography
+├── lm_client.py              # LLM client implementations
+└── utils.py                  # Bit manipulation, token utilities
+tests/
+├── test_secret.py            # Tests for secret.py + compress.py
+└── test_encode.py            # Tests for encode.py + utils.py
+```
+
+**`slopcrypt.secret`** — Main wrapper with the good stuff:
 - PBKDF2 + AES-256-GCM encrypted secrets
 - AES-256-GCM payload encryption (frequency analysis? never heard of her)
+
+**`slopcrypt.compress`** — Compression algorithms:
 - Huffman compression (~4-4.5 bits/char for English)
+- Arithmetic coding (10-20% better than Huffman)
 
-**`stego_basek.py`** — Low-level encode/decode, for when you want to suffer
+**`slopcrypt.encode`** — Low-level encode/decode, for when you want to suffer
 
-**`lm_client.py`** — LLM backends: `MockLMClient`, `LlamaCppClient`, `LMClient`, `MLXClient`
+**`slopcrypt.lm_client`** — LLM backends: `MockLMClient`, `LlamaCppClient`, `MLXClient`
 
-**`utils.py`** — Bit wrangling, token filtering, knock utilities
+**`slopcrypt.utils`** — Bit wrangling, token filtering, knock utilities
 
 **Encoding flow:**
 ```

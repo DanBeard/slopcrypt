@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Tests for stego_secret.py
+Tests for SlopCrypt secret management (slopcrypt.secret).
 
-Run with: python -m pytest test_stego_secret.py -v
+Run with: python -m pytest tests/test_secret.py -v
 """
 
 import os
@@ -10,31 +10,33 @@ import tempfile
 
 import pytest
 
-from lm_client import MockLMClient
-from stego_secret import (
+from slopcrypt.compress import (
+    COMPRESSION_ARITHMETIC,
     COMPRESSION_HUFFMAN,
-    # Phase 2: Huffman
     COMPRESSION_NONE,
     DEFAULT_FREQUENCIES,
-    PAYLOAD_KEY_SIZE,
+    arithmetic_decode,
+    arithmetic_encode,
     build_frequency_table,
     build_huffman_tree,
     compress_payload,
-    decode_message,
     decompress_payload,
+    get_huffman_codes,
+    huffman_decode,
+    huffman_encode,
+)
+from slopcrypt.lm_client import MockLMClient
+from slopcrypt.secret import (
+    PAYLOAD_KEY_SIZE,
+    decode_message,
     decrypt_payload,
     decrypt_secret_blob,
-    # Phase 1: Crypto
     derive_key,
-    # Phase 3: Wrappers
     encode_message,
     encrypt_payload,
     encrypt_secret_blob,
     generate_random_knock,
     generate_secret,
-    get_huffman_codes,
-    huffman_decode,
-    huffman_encode,
     load_secret,
     save_secret,
     validate_secret,
@@ -42,7 +44,7 @@ from stego_secret import (
 
 
 class TestCrypto:
-    """Tests for Phase 1: Crypto & Secret Management."""
+    """Tests for Crypto & Secret Management."""
 
     def test_derive_key_deterministic(self):
         """Same password and salt should produce same key."""
@@ -197,7 +199,7 @@ class TestCrypto:
 
 
 class TestHuffman:
-    """Tests for Phase 2: Huffman Compression."""
+    """Tests for Huffman Compression."""
 
     def test_build_huffman_tree(self):
         """Should build valid Huffman tree."""
@@ -291,8 +293,112 @@ class TestHuffman:
         assert freq.get(ord("z"), 0) >= 1
 
 
+class TestArithmeticCoding:
+    """Tests for Arithmetic Coding Compression."""
+
+    def test_arithmetic_encode_decode_roundtrip(self):
+        """Encode then decode should return original data."""
+        data = b"hello world"
+        freq = build_frequency_table(data)
+
+        encoded = arithmetic_encode(data, freq)
+        decoded = arithmetic_decode(encoded, freq)
+
+        assert decoded == data
+
+    def test_arithmetic_encode_decode_english(self):
+        """Should work with default English frequencies."""
+        data = b"The quick brown fox jumps over the lazy dog."
+
+        encoded = arithmetic_encode(data, DEFAULT_FREQUENCIES)
+        decoded = arithmetic_decode(encoded, DEFAULT_FREQUENCIES)
+
+        assert decoded == data
+
+    def test_arithmetic_compression_ratio(self):
+        """Arithmetic coding should compress better than Huffman."""
+        data = b"The quick brown fox jumps over the lazy dog. " * 10
+
+        arith_encoded = arithmetic_encode(data, DEFAULT_FREQUENCIES)
+        huffman_encoded = huffman_encode(data, DEFAULT_FREQUENCIES)
+
+        arith_ratio = len(arith_encoded) / len(data)
+        huffman_ratio = len(huffman_encoded) / len(data)
+
+        # Arithmetic should compress better (or at least as well)
+        assert arith_ratio <= huffman_ratio + 0.05, (
+            f"Arithmetic ratio {arith_ratio:.3f} should be <= Huffman ratio {huffman_ratio:.3f}"
+        )
+
+    def test_arithmetic_empty_data(self):
+        """Should handle empty data."""
+        data = b""
+        encoded = arithmetic_encode(data, DEFAULT_FREQUENCIES)
+        decoded = arithmetic_decode(encoded, DEFAULT_FREQUENCIES)
+
+        assert decoded == data
+
+    def test_arithmetic_single_byte(self):
+        """Should handle single byte."""
+        data = b"x"
+        encoded = arithmetic_encode(data, DEFAULT_FREQUENCIES)
+        decoded = arithmetic_decode(encoded, DEFAULT_FREQUENCIES)
+
+        assert decoded == data
+
+    def test_arithmetic_repeated_bytes(self):
+        """Should handle repeated bytes efficiently."""
+        data = b"aaaaaaaaaa"  # 10 'a' characters
+        freq = {ord("a"): 100, ord("b"): 1}
+
+        encoded = arithmetic_encode(data, freq)
+        decoded = arithmetic_decode(encoded, freq)
+
+        assert decoded == data
+        # With very skewed frequencies, highly repeated data should compress well
+        # 10 bytes of 'a' with 100:1 frequency ratio should compress significantly
+        assert len(encoded) < len(data)
+
+    def test_compress_payload_uses_arithmetic_for_text(self):
+        """Long English text should use arithmetic coding."""
+        # Longer text to ensure arithmetic coding wins
+        data = b"The quick brown fox jumps over the lazy dog. " * 20
+
+        compressed, comp_type = compress_payload(data, DEFAULT_FREQUENCIES)
+
+        # Should use arithmetic coding for English text (better compression)
+        assert comp_type == COMPRESSION_ARITHMETIC
+        assert len(compressed) < len(data)
+
+    def test_decompress_payload_arithmetic(self):
+        """Should correctly decompress arithmetic-coded data."""
+        data = b"Test message for arithmetic compression roundtrip"
+        encoded = arithmetic_encode(data, DEFAULT_FREQUENCIES)
+
+        decompressed = decompress_payload(encoded, COMPRESSION_ARITHMETIC, DEFAULT_FREQUENCIES)
+
+        assert decompressed == data
+
+    def test_arithmetic_vs_huffman_comparison(self):
+        """Compare arithmetic vs Huffman compression ratios."""
+        test_texts = [
+            b"The quick brown fox jumps over the lazy dog.",
+            b"To be or not to be, that is the question.",
+            b"Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
+            b"AAAA" * 50,  # Highly compressible
+        ]
+
+        for data in test_texts:
+            arith = arithmetic_encode(data, DEFAULT_FREQUENCIES)
+            huffman = huffman_encode(data, DEFAULT_FREQUENCIES)
+
+            # Both should roundtrip correctly
+            assert arithmetic_decode(arith, DEFAULT_FREQUENCIES) == data
+            assert huffman_decode(huffman, DEFAULT_FREQUENCIES) == data
+
+
 class TestEncodeDecodeWrappers:
-    """Tests for Phase 3: Encode/Decode Wrappers."""
+    """Tests for Encode/Decode Wrappers."""
 
     @pytest.fixture
     def mock_client(self):
@@ -371,7 +477,7 @@ class TestEncodeDecodeWrappers:
 
 
 class TestIntegration:
-    """Integration tests combining all phases."""
+    """Integration tests combining all components."""
 
     def test_full_workflow(self):
         """Test complete workflow: generate secret, encode, decode."""

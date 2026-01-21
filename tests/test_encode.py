@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
 """
-Tests for LLM Steganography Tool (Base-K implementation).
+Tests for SlopCrypt Base-K encoding (slopcrypt.encode).
 
-Run with: python -m pytest test_stego.py -v
-Or simply: python test_stego.py
+Run with: python -m pytest tests/test_encode.py -v
+Or simply: python tests/test_encode.py
 """
 
 import unittest
 
-from lm_client import MockLMClient
-from stego_basek import decode, decode_with_knock, encode, encode_with_knock
-from utils import (
+from slopcrypt.encode import decode, decode_with_knock, encode, encode_with_knock
+from slopcrypt.lm_client import MockLMClient
+from slopcrypt.utils import (
     TokenProb,
     bits_to_bytes,
     bits_to_int,
