@@ -41,6 +41,7 @@ export async function encodeWithKnock(
   preambleTokens: number = 4,
   suffixTokens: number = 2,
   temperature: number = 0.8,
+  entropyThreshold: number = 0.0,
   onProgress?: ProgressCallback
 ): Promise<string> {
   const bitsPerToken = Math.log2(k);
@@ -151,7 +152,8 @@ export async function encodeWithKnock(
       payloadBits,
       bitIdx,
       arithState,
-      topK
+      topK,
+      entropyThreshold
     );
 
     tokens.push(selectedToken.token);
@@ -196,6 +198,7 @@ export async function decodeWithKnock(
   k: number,
   knock: number[],
   prompt: string = '',
+  entropyThreshold: number = 0.0,
   onProgress?: ProgressCallback
 ): Promise<Uint8Array> {
   const bitsPerToken = Math.log2(k);
@@ -299,7 +302,7 @@ export async function decodeWithKnock(
     if (!topK.length) continue;
 
     const token = payloadTokens[i];
-    const [decodedBits, newState] = decodeToken(token, arithState, topK);
+    const [decodedBits, newState] = decodeToken(token, arithState, topK, entropyThreshold);
     allBits.push(...decodedBits);
     arithState = newState;
 
@@ -362,6 +365,7 @@ export async function encodeMessage(
     secret.preamble_tokens,
     secret.suffix_tokens,
     secret.temperature,
+    secret.entropy_threshold || 0.0,
     onProgress
   );
 
@@ -385,6 +389,7 @@ export async function decodeMessage(
     secret.k,
     secret.knock,
     prompt,
+    secret.entropy_threshold || 0.0,
     onProgress
   );
 

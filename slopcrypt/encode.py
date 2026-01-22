@@ -293,6 +293,7 @@ def encode_with_knock_arithmetic(
     preamble_tokens: int = 4,
     suffix_tokens: int = 2,
     temperature: float = 0.8,
+    entropy_threshold: float = 0.0,
     verbose: bool = False,
 ) -> str:
     """
@@ -301,6 +302,10 @@ def encode_with_knock_arithmetic(
     Unlike uniform Base-K encoding, arithmetic coding selects tokens proportionally
     to their natural probability, making the output statistically indistinguishable
     from normal LLM generation.
+
+    If entropy_threshold > 0 and the top token's probability exceeds it,
+    we skip encoding and just emit the top token (0 bits consumed). This makes
+    output more natural when one token is overwhelmingly likely.
 
     Structure:
     1. Preamble tokens (sampled naturally)
@@ -402,7 +407,7 @@ def encode_with_knock_arithmetic(
 
         # Use arithmetic coding to select token
         selected_token, new_bit_idx, arith_state = encode_token(
-            payload_bits, bit_idx, arith_state, top_k
+            payload_bits, bit_idx, arith_state, top_k, entropy_threshold
         )
 
         tokens.append(selected_token.token)
@@ -436,12 +441,16 @@ def decode_with_knock_arithmetic(
     k: int,
     knock: list[int],
     prompt: str = "",
+    entropy_threshold: float = 0.0,
     verbose: bool = False,
 ) -> bytes:
     """
     Decode arithmetic-coded payload from cover text.
 
     Must use the same model and k value as encoding.
+
+    If entropy_threshold > 0 and the top token's probability exceeds it,
+    we assume 0 bits were encoded at that position (encoder skipped it).
     """
     bits_per_token = int(math.log2(k))
 
@@ -536,7 +545,7 @@ def decode_with_knock_arithmetic(
         if not top_k:
             continue
 
-        decoded_bits, arith_state = decode_token(token, arith_state, top_k)
+        decoded_bits, arith_state = decode_token(token, arith_state, top_k, entropy_threshold)
         all_bits.extend(decoded_bits)
 
         # Stop if we have enough bits

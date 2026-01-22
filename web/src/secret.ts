@@ -129,6 +129,7 @@ export function generateSecret(options: {
   preambleTokens?: number;
   suffixTokens?: number;
   temperature?: number;
+  entropyThreshold?: number;
   huffmanSample?: Uint8Array;
   notes?: string;
 }): Secret {
@@ -138,6 +139,7 @@ export function generateSecret(options: {
     preambleTokens = 4,
     suffixTokens = 2,
     temperature = 0.8,
+    entropyThreshold = 0.0,
     notes = '',
   } = options;
 
@@ -165,6 +167,7 @@ export function generateSecret(options: {
     preamble_tokens: preambleTokens,
     suffix_tokens: suffixTokens,
     temperature,
+    entropy_threshold: entropyThreshold,
     huffman_freq: huffmanFreq,
     notes,
   };

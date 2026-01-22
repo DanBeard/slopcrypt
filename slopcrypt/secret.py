@@ -198,6 +198,7 @@ def generate_secret(
     preamble_tokens: int = 4,
     suffix_tokens: int = 2,
     temperature: float = 0.8,
+    entropy_threshold: float = 0.0,
     huffman_sample: bytes | None = None,
     notes: str = "",
 ) -> dict:
@@ -210,6 +211,7 @@ def generate_secret(
         preamble_tokens: Natural tokens before knock
         suffix_tokens: Natural tokens after payload
         temperature: Sampling temperature for preamble/suffix
+        entropy_threshold: If top token prob > this, skip encoding (0.0 = disabled)
         huffman_sample: Sample text to build frequency table (optional)
         notes: Optional metadata
 
@@ -236,6 +238,7 @@ def generate_secret(
         "preamble_tokens": preamble_tokens,
         "suffix_tokens": suffix_tokens,
         "temperature": temperature,
+        "entropy_threshold": entropy_threshold,
         "huffman_freq": huffman_freq,
         "notes": notes,
     }
@@ -334,6 +337,7 @@ def encode_message(
         preamble_tokens=secret.get("preamble_tokens", 4),
         suffix_tokens=secret.get("suffix_tokens", 2),
         temperature=secret.get("temperature", 0.8),
+        entropy_threshold=secret.get("entropy_threshold", 0.0),
         verbose=verbose,
     )
 
@@ -369,6 +373,7 @@ def decode_message(
         k=secret["k"],
         knock=secret["knock"],
         prompt=prompt or "",
+        entropy_threshold=secret.get("entropy_threshold", 0.0),
         verbose=verbose,
     )
 
@@ -477,6 +482,7 @@ def cmd_generate_secret(args):
         preamble_tokens=args.preamble,
         suffix_tokens=args.suffix,
         temperature=args.temperature,
+        entropy_threshold=args.entropy_threshold,
         huffman_sample=huffman_sample,
         notes=args.notes or "",
     )
@@ -593,6 +599,7 @@ def cmd_show_secret(args):
     print(f"Preamble tokens: {secret.get('preamble_tokens', 4)}")
     print(f"Suffix tokens: {secret.get('suffix_tokens', 2)}")
     print(f"Temperature: {secret.get('temperature', 0.8)}")
+    print(f"Entropy threshold: {secret.get('entropy_threshold', 0.0)}")
 
     huffman_freq = secret.get("huffman_freq", {})
     print(f"Huffman frequencies: {len(huffman_freq)} entries")
@@ -642,6 +649,12 @@ Examples:
     gen_parser.add_argument("--suffix", type=int, default=2, help="Suffix tokens (default: 2)")
     gen_parser.add_argument(
         "--temperature", type=float, default=0.8, help="Temperature (default: 0.8)"
+    )
+    gen_parser.add_argument(
+        "--entropy-threshold",
+        type=float,
+        default=0.0,
+        help="Skip encoding if top token prob > threshold (0.0 = disabled, try 0.9 for more natural text)",
     )
     gen_parser.add_argument("--huffman-sample", help="Sample file for Huffman frequencies")
     gen_parser.add_argument("--notes", help="Optional notes/metadata")

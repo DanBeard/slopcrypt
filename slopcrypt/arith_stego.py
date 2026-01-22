@@ -99,6 +99,7 @@ def encode_token(
     bit_index: int,
     state: ArithState,
     top_k: list[TokenProb],
+    entropy_threshold: float = 0.0,
 ) -> tuple[TokenProb, int, ArithState]:
     """
     Select a token using probability-weighted encoding.
@@ -108,14 +109,16 @@ def encode_token(
     2. Maps that index through cumulative probability ranges
     3. Selects the token at the mapped position
 
-    The result is that tokens are selected proportionally to probability
-    while maintaining a fixed bit rate (same as uniform encoding).
+    If entropy_threshold > 0 and the top token's probability exceeds it,
+    we skip encoding and just emit the top token (0 bits consumed).
+    This makes output more natural when one token is overwhelmingly likely.
 
     Args:
         bit_stream: All message bits to encode
         bit_index: Current position in bit stream
         state: Current arithmetic coding state (passed through)
         top_k: Token distribution at this position
+        entropy_threshold: If top token prob > this, skip encoding (0.0 = disabled)
 
     Returns:
         (selected_token, new_bit_index, new_state)
@@ -124,6 +127,16 @@ def encode_token(
 
     if not top_k:
         raise ValueError("Empty token distribution")
+
+    # Check entropy threshold - if top token is very likely, just emit it
+    # without encoding any bits. Both encoder and decoder detect this.
+    if entropy_threshold > 0:
+        total_prob = sum(t.prob for t in top_k)
+        if total_prob > 0:
+            top_prob = top_k[0].prob / total_prob
+            if top_prob >= entropy_threshold:
+                # Skip encoding - emit top token, consume 0 bits
+                return top_k[0], bit_index, state
 
     k = len(top_k)
     bits_per_token = int(math.log2(k)) if k > 1 else 1
@@ -158,16 +171,21 @@ def decode_token(
     token: TokenProb,
     state: ArithState,
     top_k: list[TokenProb],
+    entropy_threshold: float = 0.0,
 ) -> tuple[list[int], ArithState]:
     """
     Extract message bits encoded by a token selection.
 
     Given the token that was selected, find its index and convert to bits.
 
+    If entropy_threshold > 0 and the top token's probability exceeds it,
+    we assume 0 bits were encoded (encoder skipped this position).
+
     Args:
         token: The selected token
         state: Current arithmetic coding state (passed through)
         top_k: Token distribution at this position
+        entropy_threshold: If top token prob > this, assume 0 bits encoded (0.0 = disabled)
 
     Returns:
         (extracted_bits, new_state)
@@ -176,6 +194,15 @@ def decode_token(
 
     if not top_k:
         raise ValueError("Empty token distribution")
+
+    # Check entropy threshold - if top token is very likely, encoder skipped this position
+    if entropy_threshold > 0:
+        total_prob = sum(t.prob for t in top_k)
+        if total_prob > 0:
+            top_prob = top_k[0].prob / total_prob
+            if top_prob >= entropy_threshold:
+                # No bits were encoded at this position
+                return [], state
 
     k = len(top_k)
     bits_per_token = int(math.log2(k)) if k > 1 else 1

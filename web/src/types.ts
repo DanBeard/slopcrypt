@@ -28,6 +28,7 @@ export interface Secret {
   preamble_tokens: number;
   suffix_tokens: number;
   temperature: number;
+  entropy_threshold?: number;
   huffman_freq: Record<number, number>;
   notes: string;
 }

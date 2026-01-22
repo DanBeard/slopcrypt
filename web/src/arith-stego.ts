@@ -113,16 +113,37 @@ export function normalizeDistribution(topK: TokenProb[]): CumulativeRange[] {
  * The result is that tokens are selected proportionally to probability
  * while maintaining a fixed bit rate (same as uniform encoding).
  *
+ * If entropyThreshold > 0 and the top token's probability exceeds it,
+ * we skip encoding and just emit the top token (0 bits consumed).
+ * This makes output more natural when one token is overwhelmingly likely.
+ *
  * @returns [selected_token, new_bit_index, new_state]
  */
 export function encodeToken(
   bitStream: number[],
   bitIndex: number,
   state: ArithState,
-  topK: TokenProb[]
+  topK: TokenProb[],
+  entropyThreshold: number = 0.0
 ): [TokenProb, number, ArithState] {
   if (topK.length === 0) {
     throw new Error('Empty token distribution');
+  }
+
+  // Check entropy threshold - if top token is very likely, just emit it
+  // without encoding any bits. Both encoder and decoder detect this.
+  if (entropyThreshold > 0) {
+    let totalProb = 0;
+    for (const t of topK) {
+      totalProb += t.prob;
+    }
+    if (totalProb > 0) {
+      const topProb = topK[0].prob / totalProb;
+      if (topProb >= entropyThreshold) {
+        // Skip encoding - emit top token, consume 0 bits
+        return [topK[0], bitIndex, state];
+      }
+    }
   }
 
   const k = topK.length;
@@ -163,15 +184,34 @@ export function encodeToken(
  *
  * Given the token that was selected, find its index and convert to bits.
  *
+ * If entropyThreshold > 0 and the top token's probability exceeds it,
+ * we assume 0 bits were encoded (encoder skipped this position).
+ *
  * @returns [extracted_bits, new_state]
  */
 export function decodeToken(
   token: TokenProb,
   state: ArithState,
-  topK: TokenProb[]
+  topK: TokenProb[],
+  entropyThreshold: number = 0.0
 ): [number[], ArithState] {
   if (topK.length === 0) {
     throw new Error('Empty token distribution');
+  }
+
+  // Check entropy threshold - if top token is very likely, encoder skipped this position
+  if (entropyThreshold > 0) {
+    let totalProb = 0;
+    for (const t of topK) {
+      totalProb += t.prob;
+    }
+    if (totalProb > 0) {
+      const topProb = topK[0].prob / totalProb;
+      if (topProb >= entropyThreshold) {
+        // No bits were encoded at this position
+        return [[], state];
+      }
+    }
   }
 
   const k = topK.length;
