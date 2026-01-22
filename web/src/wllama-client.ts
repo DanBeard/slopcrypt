@@ -12,6 +12,57 @@ import type { LMClient, TokenProb } from './types.ts';
 export type LoadProgressCallback = (progress: number) => void;
 
 /**
+ * Available model configurations.
+ */
+export interface ModelConfig {
+  id: string;
+  name: string;
+  size: string;
+  repo: string;
+  file: string;
+  description: string;
+}
+
+/**
+ * Available models for the web client.
+ * Ordered from smallest to largest.
+ */
+export const AVAILABLE_MODELS: ModelConfig[] = [
+  {
+    id: 'smollm2-135m',
+    name: 'SmolLM2-135M',
+    size: '~150MB',
+    repo: 'unsloth/SmolLM2-135M-Instruct-GGUF',
+    file: 'SmolLM2-135M-Instruct-Q8_0.gguf',
+    description: 'Fastest, most sloppy output',
+  },
+  {
+    id: 'smollm2-360m',
+    name: 'SmolLM2-360M',
+    size: '~380MB',
+    repo: 'unsloth/SmolLM2-360M-Instruct-GGUF',
+    file: 'SmolLM2-360M-Instruct-Q8_0.gguf',
+    description: 'Better quality, still fast',
+  },
+  {
+    id: 'qwen2.5-0.5b',
+    name: 'Qwen2.5-0.5B',
+    size: '~530MB',
+    repo: 'Qwen/Qwen2.5-0.5B-Instruct-GGUF',
+    file: 'qwen2.5-0.5b-instruct-q8_0.gguf',
+    description: 'Good quality/speed balance',
+  },
+  {
+    id: 'smollm2-1.7b',
+    name: 'SmolLM2-1.7B',
+    size: '~1.8GB',
+    repo: 'unsloth/SmolLM2-1.7B-Instruct-GGUF',
+    file: 'SmolLM2-1.7B-Instruct-Q8_0.gguf',
+    description: 'Best quality, slower',
+  },
+];
+
+/**
  * wllama client for browser-based LLM inference.
  *
  * Supports incremental inference: if you call getTokenDistribution with a context
@@ -23,13 +74,22 @@ export class WllamaClient implements LMClient {
   private topK: number;
   private tokenCache: Map<number, string> = new Map();
   private isLoaded: boolean = false;
+  private modelConfig: ModelConfig;
 
   // Incremental inference state
   private lastContext: string = '';
   private lastTokens: number[] = [];
 
-  constructor(topK: number = 64) {
+  constructor(topK: number = 64, modelConfig?: ModelConfig) {
     this.topK = topK;
+    this.modelConfig = modelConfig || AVAILABLE_MODELS[0];
+  }
+
+  /**
+   * Get the current model configuration.
+   */
+  get currentModel(): ModelConfig {
+    return this.modelConfig;
   }
 
   /**
@@ -90,8 +150,8 @@ export class WllamaClient implements LMClient {
     const maxThreads = Math.min(navigator.hardwareConcurrency || 4, 4);
 
     await this.wllama.loadModelFromHF(
-      'unsloth/SmolLM2-135M-Instruct-GGUF',
-      'SmolLM2-135M-Instruct-Q8_0.gguf',
+      this.modelConfig.repo,
+      this.modelConfig.file,
       {
         n_threads: maxThreads,
         useCache,

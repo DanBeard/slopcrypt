@@ -35,8 +35,8 @@ export async function encodeWithKnock(
   prompt: string,
   k: number,
   knock: number[],
-  preambleTokens: number = 10,
-  suffixTokens: number = 10,
+  preambleTokens: number = 4,
+  suffixTokens: number = 2,
   temperature: number = 0.8,
   onProgress?: ProgressCallback
 ): Promise<string> {

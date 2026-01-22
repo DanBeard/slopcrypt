@@ -532,7 +532,8 @@
     <div class="model-status" id="modelStatus">
       <div class="indicator"></div>
       <span id="modelStatusText">Slop machine offline</span>
-      <button id="loadModelBtn" class="secondary" style="margin-left: auto;">Load Model</button>
+      <select id="modelSelect" style="margin-left: auto; width: auto; padding: 0.4rem 0.6rem;"></select>
+      <button id="loadModelBtn" class="secondary">Load Model</button>
     </div>
 
     <!-- Encode Panel -->
@@ -673,11 +674,11 @@ The weary traveler had been walking for</textarea>
           </div>
           <div class="form-group">
             <label for="secretPreamble">Preamble tokens</label>
-            <input type="number" id="secretPreamble" value="10" min="0" max="100">
+            <input type="number" id="secretPreamble" value="4" min="0" max="100">
           </div>
           <div class="form-group">
             <label for="secretSuffix">Suffix tokens</label>
-            <input type="number" id="secretSuffix" value="10" min="0" max="100">
+            <input type="number" id="secretSuffix" value="2" min="0" max="100">
           </div>
         </div>
 
@@ -787,7 +788,15 @@ The weary traveler had been walking for</textarea>
 
           <h3>FAQ</h3>
           <p><strong>Q: Do I need to load a model?</strong><br>
-          A: Yes! Click "Load Model" to download SmolLM2 (~150MB, cached after first load). Both sender and receiver must use the same model. There's also a mock client for testing the UI.</p>
+          A: Yes! Select a model from the dropdown and click "Load Model". Both sender and receiver must use the same model. There's also a mock client for testing the UI.</p>
+
+          <p><strong>Q: Which model should I use?</strong><br>
+          A: It depends on your priorities:<br>
+          • <span class="highlight">SmolLM2-135M</span> (~150MB) — Fastest, but output looks more "sloppy"<br>
+          • <span class="highlight">SmolLM2-360M</span> (~380MB) — Better quality, still quick<br>
+          • <span class="highlight">Qwen2.5-0.5B</span> (~530MB) — Good balance of quality and speed<br>
+          • <span class="highlight">SmolLM2-1.7B</span> (~1.8GB) — Best quality, but slower and uses more RAM<br>
+          Larger models produce more natural-sounding text. Smaller K values (like K=4) also improve quality but reduce encoding density.</p>
 
           <p><strong>Q: How do I share the secret with someone?</strong><br>
           A: Generate a secret, copy the blob, and send it + the password through a secure channel (Signal, encrypted email, etc.). They'll paste it in to decode your messages.</p>

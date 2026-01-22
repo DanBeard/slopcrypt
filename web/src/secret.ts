@@ -135,8 +135,8 @@ export function generateSecret(options: {
   const {
     k,
     knock = generateRandomKnock(k, 6),
-    preambleTokens = 10,
-    suffixTokens = 10,
+    preambleTokens = 4,
+    suffixTokens = 2,
     temperature = 0.8,
     notes = '',
   } = options;

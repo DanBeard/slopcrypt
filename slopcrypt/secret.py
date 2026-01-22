@@ -195,8 +195,8 @@ def decrypt_payload(encrypted: bytes, key: bytes) -> bytes:
 def generate_secret(
     k: int,
     knock: list[int] | None = None,
-    preamble_tokens: int = 10,
-    suffix_tokens: int = 10,
+    preamble_tokens: int = 4,
+    suffix_tokens: int = 2,
     temperature: float = 0.8,
     huffman_sample: bytes | None = None,
     notes: str = "",
@@ -331,8 +331,8 @@ def encode_message(
         prompt=prompt,
         k=secret["k"],
         knock=secret["knock"],
-        preamble_tokens=secret.get("preamble_tokens", 10),
-        suffix_tokens=secret.get("suffix_tokens", 10),
+        preamble_tokens=secret.get("preamble_tokens", 4),
+        suffix_tokens=secret.get("suffix_tokens", 2),
         temperature=secret.get("temperature", 0.8),
         verbose=verbose,
     )
@@ -590,8 +590,8 @@ def cmd_show_secret(args):
     print(f"K: {secret['k']} ({int(math.log2(secret['k']))} bits/token)")
     print(f"Knock: {secret['knock']}")
     print(f"Payload key: [present, {len(secret.get('payload_key', b''))} bytes]")
-    print(f"Preamble tokens: {secret.get('preamble_tokens', 10)}")
-    print(f"Suffix tokens: {secret.get('suffix_tokens', 10)}")
+    print(f"Preamble tokens: {secret.get('preamble_tokens', 4)}")
+    print(f"Suffix tokens: {secret.get('suffix_tokens', 2)}")
     print(f"Temperature: {secret.get('temperature', 0.8)}")
 
     huffman_freq = secret.get("huffman_freq", {})
@@ -637,9 +637,9 @@ Examples:
         "--knock", help="Comma-separated knock sequence (auto-generated if not specified)"
     )
     gen_parser.add_argument(
-        "--preamble", type=int, default=10, help="Preamble tokens (default: 10)"
+        "--preamble", type=int, default=4, help="Preamble tokens (default: 4)"
     )
-    gen_parser.add_argument("--suffix", type=int, default=10, help="Suffix tokens (default: 10)")
+    gen_parser.add_argument("--suffix", type=int, default=2, help="Suffix tokens (default: 2)")
     gen_parser.add_argument(
         "--temperature", type=float, default=0.8, help="Temperature (default: 0.8)"
     )

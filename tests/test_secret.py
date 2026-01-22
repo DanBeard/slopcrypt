@@ -523,11 +523,15 @@ class TestIntegration:
         message = b"Test message"
         prompt = "Test: "
 
-        # Use explicit knocks with low indices that work with mock client
-        # (after prefix filtering, mock client may have fewer usable tokens)
+        # Use explicit knocks that are unlikely to appear in random encrypted data
+        # Longer sequences with varied patterns are less likely to collide
+        knocks_by_k = {
+            4: [3, 0, 3, 0, 3, 1, 2, 1],  # Longer pattern less likely in payload
+            8: [7, 0, 7, 0, 5, 2, 6, 3],
+            16: [15, 0, 14, 1, 13, 2, 12, 3],
+        }
         for k in [4, 8, 16]:
-            # Use knock indices that are guaranteed to be available
-            knock = [i % k for i in [0, 1, 2, 3, 1, 2]]
+            knock = knocks_by_k[k]
             secret = generate_secret(k=k, knock=knock)
 
             cover_text = encode_message(message, secret, client, prompt=prompt)

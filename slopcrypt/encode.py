@@ -150,8 +150,8 @@ def encode_with_knock(
     prompt: str,
     k: int,
     knock: list[int],
-    preamble_tokens: int = 10,
-    suffix_tokens: int = 10,
+    preamble_tokens: int = 4,
+    suffix_tokens: int = 2,
     temperature: float = 0.8,
     verbose: bool = False,
 ) -> str:
@@ -555,14 +555,14 @@ Examples:
     parser.add_argument(
         "--preamble",
         type=int,
-        default=10,
-        help="Natural tokens to generate before knock (default: 10)",
+        default=4,
+        help="Natural tokens to generate before knock (default: 4)",
     )
     parser.add_argument(
         "--suffix",
         type=int,
-        default=10,
-        help="Natural tokens to generate after payload (default: 10)",
+        default=2,
+        help="Natural tokens to generate after payload (default: 2)",
     )
     parser.add_argument(
         "--temperature",

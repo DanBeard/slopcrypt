@@ -5,7 +5,7 @@
 import type { Secret, LMClient } from './types.ts';
 import { DEFAULT_PROMPT } from './types.ts';
 import { MockLMClient } from './mock-client.ts';
-import { WllamaClient } from './wllama-client.ts';
+import { WllamaClient, AVAILABLE_MODELS, type ModelConfig } from './wllama-client.ts';
 import { generateSecret, encryptSecretBlob, decryptSecretBlob } from './secret.ts';
 import { encodeMessage, decodeMessage } from './stego.ts';
 
@@ -28,6 +28,24 @@ document.querySelectorAll('.tab').forEach((tab) => {
   });
 });
 
+// Initialize model dropdown
+function initModelDropdown(): void {
+  const select = $<HTMLSelectElement>('modelSelect');
+  select.innerHTML = AVAILABLE_MODELS.map(
+    (m) => `<option value="${m.id}">${m.name} (${m.size})</option>`
+  ).join('');
+}
+
+// Call on page load
+initModelDropdown();
+
+// Get selected model config
+function getSelectedModel(): ModelConfig {
+  const select = $<HTMLSelectElement>('modelSelect');
+  const modelId = select.value;
+  return AVAILABLE_MODELS.find((m) => m.id === modelId) || AVAILABLE_MODELS[0];
+}
+
 // Model loading
 $<HTMLButtonElement>('loadModelBtn').addEventListener('click', async () => {
   if (isModelLoading) return;
@@ -35,21 +53,30 @@ $<HTMLButtonElement>('loadModelBtn').addEventListener('click', async () => {
   const btn = $<HTMLButtonElement>('loadModelBtn');
   const status = $<HTMLDivElement>('modelStatus');
   const statusText = $<HTMLSpanElement>('modelStatusText');
+  const modelSelect = $<HTMLSelectElement>('modelSelect');
+  const selectedModel = getSelectedModel();
 
   isModelLoading = true;
   btn.disabled = true;
+  modelSelect.disabled = true;
   status.className = 'model-status loading';
-  statusText.textContent = 'Loading model (0%)...';
+  statusText.textContent = `Loading ${selectedModel.name} (0%)...`;
 
   try {
-    wllamaClient = new WllamaClient(64);
+    // Close existing client if loaded
+    if (wllamaClient && wllamaClient.loaded) {
+      await wllamaClient.close();
+    }
+
+    wllamaClient = new WllamaClient(64, selectedModel);
     await wllamaClient.loadModel((progress) => {
-      statusText.textContent = `Loading model (${Math.round(progress * 100)}%)...`;
+      statusText.textContent = `Loading ${selectedModel.name} (${Math.round(progress * 100)}%)...`;
     });
 
     status.className = 'model-status loaded';
-    statusText.textContent = 'Model loaded (SmolLM2-135M)';
-    btn.textContent = 'Model Loaded';
+    statusText.textContent = `Model loaded (${selectedModel.name})`;
+    btn.textContent = 'Change Model';
+    btn.disabled = false;
   } catch (err) {
     status.className = 'model-status';
     statusText.textContent = `Failed to load model: ${err}`;
@@ -57,6 +84,7 @@ $<HTMLButtonElement>('loadModelBtn').addEventListener('click', async () => {
     wllamaClient = null;
   } finally {
     isModelLoading = false;
+    modelSelect.disabled = false;
   }
 });
 
@@ -223,8 +251,8 @@ $<HTMLButtonElement>('decodeBtn').addEventListener('click', async () => {
 // Generate secret
 $<HTMLButtonElement>('generateSecretBtn').addEventListener('click', async () => {
   const k = parseInt($<HTMLSelectElement>('secretK').value);
-  const preamble = parseInt($<HTMLInputElement>('secretPreamble').value) || 10;
-  const suffix = parseInt($<HTMLInputElement>('secretSuffix').value) || 10;
+  const preamble = parseInt($<HTMLInputElement>('secretPreamble').value) || 4;
+  const suffix = parseInt($<HTMLInputElement>('secretSuffix').value) || 2;
   const password = $<HTMLInputElement>('secretPassword').value;
   const notes = $<HTMLInputElement>('secretNotes').value;
   const statusEl = $<HTMLDivElement>('secretStatus');
@@ -351,8 +379,8 @@ $<HTMLButtonElement>('quickGenerateBtn').addEventListener('click', async () => {
   try {
     currentSecret = generateSecret({
       k: 16,
-      preambleTokens: 10,
-      suffixTokens: 10,
+      preambleTokens: 4,
+      suffixTokens: 2,
     });
 
     const blob = await encryptSecretBlob(currentSecret, password);
