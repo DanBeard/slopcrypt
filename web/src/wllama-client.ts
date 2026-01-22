@@ -40,12 +40,33 @@ export class WllamaClient implements LMClient {
         'https://cdn.jsdelivr.net/npm/@wllama/wllama@2.3.7/esm/multi-thread/wllama.wasm',
     });
 
-    // Load SmolLM2 model from HuggingFace
+    // Try loading with cache first, fall back to no-cache if corrupted
+    try {
+      await this.loadModelWithOptions(onProgress, true);
+    } catch (err) {
+      console.warn('Cached model load failed, retrying without cache:', err);
+      // Clear any corrupted cache and retry
+      await this.loadModelWithOptions(onProgress, false);
+    }
+
+    this.isLoaded = true;
+  }
+
+  /**
+   * Load model with specified cache option.
+   */
+  private async loadModelWithOptions(
+    onProgress?: LoadProgressCallback,
+    useCache: boolean = true
+  ): Promise<void> {
+    if (!this.wllama) throw new Error('Wllama not initialized');
+
     await this.wllama.loadModelFromHF(
       'HuggingFaceTB/SmolLM2-135M-Instruct-GGUF',
       'smollm2-135m-instruct-q8_0.gguf',
       {
-        useCache: true, // Cache to OPFS for faster subsequent loads
+        n_threads: 1, // Force single-thread for compatibility
+        useCache,
         progressCallback: (opts) => {
           if (onProgress && opts.total > 0) {
             onProgress(opts.loaded / opts.total);
@@ -53,8 +74,6 @@ export class WllamaClient implements LMClient {
         },
       }
     );
-
-    this.isLoaded = true;
   }
 
   /**

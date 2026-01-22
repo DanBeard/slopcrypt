@@ -326,8 +326,8 @@ export function huffmanDecode(
 // Constants for 32-bit arithmetic coding
 // Using 32-bit precision ensures cross-language compatibility (Python, TypeScript)
 // Note: Use explicit values since JS bitwise ops only work on 32-bit integers
+// Full range would be 0x100000000 (2^32) but we use MASK for bounds
 const ARITH_NUM_BITS = 32;
-const ARITH_FULL_RANGE = 0x100000000; // 2^32 = 4294967296
 const ARITH_HALF = 0x80000000; // 2^31 (can't use >>> on values >= 2^32)
 const ARITH_QUARTER = 0x40000000; // 2^30
 const ARITH_MASK = 0xffffffff; // 2^32 - 1
