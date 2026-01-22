@@ -77,6 +77,7 @@ export async function encodeWithKnock(
   }
 
   // Check if knock sequence appears in preamble
+  console.log('[ENCODE] Preamble indices:', preambleIndices);
   if (findKnockSequence(preambleIndices, knock) !== -1) {
     throw new Error(
       'Knock sequence found in preamble, use different knock sequence or prompt'
@@ -101,7 +102,7 @@ export async function encodeWithKnock(
 
     const actualIdx = idx >= topK.length ? idx % topK.length : idx;
     const token = topK[actualIdx].token;
-    console.log(`[ENCODE] Knock[${i}]: idx=${actualIdx}, token="${token}", topK[0..2]:`, topK.slice(0, 3).map(t => t.token));
+    console.log(`[ENCODE] Knock[${i}]: idx=${actualIdx}, token="${token}", topK.length=${topK.length}, topK[0..4]:`, topK.slice(0, 5).map(t => `${t.token}(${t.prob.toFixed(3)})`));
     tokens.push(token);
     context += token;
     onProgress?.('Encoding knock', i + 1, knock.length);
@@ -250,7 +251,7 @@ export async function decodeWithKnock(
     topKSequence.push(topK);
     // Debug: log first 15 tokens matched
     if (tokenCount < 15) {
-      console.log(`[DECODE] Token ${tokenCount}: idx=${matchedIndex}, token="${matched.token}", topK[0..2]:`, topK.slice(0, 3).map(t => t.token));
+      console.log(`[DECODE] Token ${tokenCount}: idx=${matchedIndex}, token="${matched.token}", topK.length=${topK.length}, topK[0..4]:`, topK.slice(0, 5).map(t => `${t.token}(${t.prob.toFixed(3)})`));
     }
     context += matched.token;
     remaining = remaining.slice(matched.token.length);
