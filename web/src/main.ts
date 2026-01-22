@@ -336,3 +336,80 @@ $<HTMLInputElement>('encodeMock').addEventListener('change', (e) => {
 $<HTMLInputElement>('decodeMock').addEventListener('change', (e) => {
   $<HTMLInputElement>('encodeMock').checked = (e.target as HTMLInputElement).checked;
 });
+
+// Quick Start: Generate secret (on Encode tab)
+$<HTMLButtonElement>('quickGenerateBtn').addEventListener('click', async () => {
+  const password = $<HTMLInputElement>('quickPassword').value;
+  const successCard = $<HTMLDivElement>('quickSecretSuccess');
+  const blobDisplay = $<HTMLDivElement>('quickSecretBlob');
+
+  if (!password) {
+    alert('Please enter a password');
+    return;
+  }
+
+  try {
+    currentSecret = generateSecret({
+      k: 16,
+      preambleTokens: 10,
+      suffixTokens: 10,
+    });
+
+    const blob = await encryptSecretBlob(currentSecret, password);
+    blobDisplay.textContent = blob;
+    successCard.classList.remove('hidden');
+
+    // Also update the secrets tab
+    $<HTMLTextAreaElement>('secretBlob').value = blob;
+    updateSecretInfo();
+    $<HTMLButtonElement>('exportSecretBtn').disabled = false;
+  } catch (err) {
+    alert(`Failed to generate secret: ${err}`);
+  }
+});
+
+// Quick Start: Copy blob (on Encode tab)
+$<HTMLButtonElement>('quickCopyBlob').addEventListener('click', async () => {
+  const blob = $<HTMLDivElement>('quickSecretBlob').textContent || '';
+  await navigator.clipboard.writeText(blob);
+  const btn = $<HTMLButtonElement>('quickCopyBlob');
+  const originalText = btn.textContent;
+  btn.textContent = 'Copied!';
+  setTimeout(() => {
+    btn.textContent = originalText;
+  }, 1500);
+});
+
+// Quick Start: Load secret (on Decode tab)
+$<HTMLButtonElement>('quickLoadBtn').addEventListener('click', async () => {
+  const blob = $<HTMLTextAreaElement>('quickLoadBlob').value.trim();
+  const password = $<HTMLInputElement>('quickLoadPassword').value;
+  const statusEl = $<HTMLDivElement>('quickLoadStatus');
+
+  if (!blob) {
+    statusEl.textContent = 'Please enter a secret blob';
+    statusEl.className = 'status error';
+    return;
+  }
+
+  if (!password) {
+    statusEl.textContent = 'Please enter the password';
+    statusEl.className = 'status error';
+    return;
+  }
+
+  try {
+    currentSecret = await decryptSecretBlob(blob, password);
+    updateSecretInfo();
+
+    statusEl.textContent = 'Secret loaded! You can now decode messages.';
+    statusEl.className = 'status success';
+
+    // Also update the secrets tab
+    $<HTMLTextAreaElement>('secretBlob').value = blob;
+    $<HTMLButtonElement>('exportSecretBtn').disabled = false;
+  } catch (err) {
+    statusEl.textContent = `Failed to load secret: ${err}`;
+    statusEl.className = 'status error';
+  }
+});
