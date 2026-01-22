@@ -79,8 +79,8 @@ export class WllamaClient implements LMClient {
     if (!this.wllama) throw new Error('Wllama not initialized');
 
     await this.wllama.loadModelFromHF(
-      'HuggingFaceTB/SmolLM2-135M-Instruct-GGUF',
-      'smollm2-135m-instruct-q8_0.gguf',
+      'unsloth/SmolLM2-135M-Instruct-GGUF',
+      'SmolLM2-135M-Instruct-Q8_0.gguf',
       {
         n_threads: 1, // Force single-thread for compatibility
         useCache,
