@@ -13,12 +13,20 @@ export type LoadProgressCallback = (progress: number) => void;
 
 /**
  * wllama client for browser-based LLM inference.
+ *
+ * Supports incremental inference: if you call getTokenDistribution with a context
+ * that extends the previous context, only the new tokens are decoded (O(1) per token
+ * instead of O(N) for full re-decode).
  */
 export class WllamaClient implements LMClient {
   private wllama: Wllama | null = null;
   private topK: number;
   private tokenCache: Map<number, string> = new Map();
   private isLoaded: boolean = false;
+
+  // Incremental inference state
+  private lastContext: string = '';
+  private lastTokens: number[] = [];
 
   constructor(topK: number = 64) {
     this.topK = topK;
@@ -78,11 +86,14 @@ export class WllamaClient implements LMClient {
   ): Promise<void> {
     if (!this.wllama) throw new Error('Wllama not initialized');
 
+    // Detect available threads (use navigator.hardwareConcurrency, cap at 4 for WASM)
+    const maxThreads = Math.min(navigator.hardwareConcurrency || 4, 4);
+
     await this.wllama.loadModelFromHF(
       'unsloth/SmolLM2-135M-Instruct-GGUF',
       'SmolLM2-135M-Instruct-Q8_0.gguf',
       {
-        n_threads: 1, // Force single-thread for compatibility
+        n_threads: maxThreads,
         useCache,
         progressCallback: (opts) => {
           if (onProgress && opts.total > 0) {
@@ -102,29 +113,45 @@ export class WllamaClient implements LMClient {
 
   /**
    * Get probability distribution over next tokens.
+   *
+   * Supports incremental inference: if the new context extends the previous one,
+   * only the new tokens are decoded (massive speedup for sequential generation).
    */
   async getTokenDistribution(context: string): Promise<TokenProb[]> {
     if (!this.wllama || !this.isLoaded) {
       throw new Error('Model not loaded. Call loadModel() first.');
     }
 
-    // Tokenize context
+    // Tokenize the full context
     const tokens = await this.wllama.tokenize(context);
     if (tokens.length === 0) {
       return [];
     }
 
-    // Run inference to get logits
-    await this.wllama.samplingInit({});
-    await this.wllama.kvClear();
+    // Check if this context extends the previous one (incremental inference)
+    const isIncremental =
+      context.startsWith(this.lastContext) &&
+      this.lastContext.length > 0 &&
+      this.lastTokens.length > 0;
 
-    // Process all tokens to build context
-    for (const token of tokens) {
-      await this.wllama.decode([token], {});
+    if (isIncremental) {
+      // Only decode the new tokens (O(delta) instead of O(N))
+      const newTokens = tokens.slice(this.lastTokens.length);
+      if (newTokens.length > 0) {
+        await this.wllama.decode(newTokens, {});
+      }
+    } else {
+      // Full context switch - need to re-decode everything
+      await this.wllama.samplingInit({});
+      await this.wllama.kvClear();
+      await this.wllama.decode(tokens, {});
     }
 
+    // Update state for next call
+    this.lastContext = context;
+    this.lastTokens = tokens;
+
     // Get logits for top-K tokens
-    // Note: wllama returns top candidates via samplingAccept or getLogits
     const logits = await this.wllama.getLogits(this.topK);
 
     const result: TokenProb[] = [];
@@ -156,6 +183,15 @@ export class WllamaClient implements LMClient {
   }
 
   /**
+   * Reset the incremental inference state.
+   * Call this when switching to a completely different context.
+   */
+  resetContext(): void {
+    this.lastContext = '';
+    this.lastTokens = [];
+  }
+
+  /**
    * Release model resources.
    */
   async close(): Promise<void> {
@@ -164,6 +200,7 @@ export class WllamaClient implements LMClient {
       this.wllama = null;
       this.isLoaded = false;
       this.tokenCache.clear();
+      this.resetContext();
     }
   }
 }
