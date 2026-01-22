@@ -25,6 +25,18 @@ export class WllamaClient implements LMClient {
   }
 
   /**
+   * Create a fresh Wllama instance with CDN WASM paths.
+   */
+  private createWllamaInstance(): Wllama {
+    return new Wllama({
+      'single-thread/wllama.wasm':
+        'https://cdn.jsdelivr.net/npm/@wllama/wllama@2.3.7/esm/single-thread/wllama.wasm',
+      'multi-thread/wllama.wasm':
+        'https://cdn.jsdelivr.net/npm/@wllama/wllama@2.3.7/esm/multi-thread/wllama.wasm',
+    });
+  }
+
+  /**
    * Initialize wllama and load model.
    */
   async loadModel(onProgress?: LoadProgressCallback): Promise<void> {
@@ -32,23 +44,28 @@ export class WllamaClient implements LMClient {
       return;
     }
 
-    // Initialize wllama with WASM paths from CDN
-    this.wllama = new Wllama({
-      'single-thread/wllama.wasm':
-        'https://cdn.jsdelivr.net/npm/@wllama/wllama@2.3.7/esm/single-thread/wllama.wasm',
-      'multi-thread/wllama.wasm':
-        'https://cdn.jsdelivr.net/npm/@wllama/wllama@2.3.7/esm/multi-thread/wllama.wasm',
-    });
-
-    // Try loading with cache first, fall back to no-cache if corrupted
+    // Try loading with cache first
     try {
+      this.wllama = this.createWllamaInstance();
       await this.loadModelWithOptions(onProgress, true);
+      this.isLoaded = true;
+      return;
     } catch (err) {
       console.warn('Cached model load failed, retrying without cache:', err);
-      // Clear any corrupted cache and retry
-      await this.loadModelWithOptions(onProgress, false);
+      // Clean up failed instance
+      if (this.wllama) {
+        try {
+          await this.wllama.exit();
+        } catch {
+          // Ignore cleanup errors
+        }
+        this.wllama = null;
+      }
     }
 
+    // Retry with fresh instance and no cache
+    this.wllama = this.createWllamaInstance();
+    await this.loadModelWithOptions(onProgress, false);
     this.isLoaded = true;
   }
 
