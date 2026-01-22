@@ -189,10 +189,25 @@ export class WllamaClient implements LMClient {
     }
 
     // Check if this context extends the previous one (incremental inference)
-    const isIncremental =
+    // IMPORTANT: We must verify that the new tokens actually START with the old tokens,
+    // not just that the string is a prefix. Tokenization is holistic - "Th" may tokenize
+    // completely differently than "T" + "h".
+    let isIncremental = false;
+    if (
       context.startsWith(this.lastContext) &&
       this.lastContext.length > 0 &&
-      this.lastTokens.length > 0;
+      this.lastTokens.length > 0 &&
+      tokens.length >= this.lastTokens.length
+    ) {
+      // Verify token-level prefix match
+      isIncremental = true;
+      for (let i = 0; i < this.lastTokens.length; i++) {
+        if (tokens[i] !== this.lastTokens[i]) {
+          isIncremental = false;
+          break;
+        }
+      }
+    }
 
     if (isIncremental) {
       // Only decode the new tokens (O(delta) instead of O(N))
