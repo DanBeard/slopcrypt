@@ -157,7 +157,6 @@ $<HTMLButtonElement>('copyEncoded').addEventListener('click', async () => {
 // Decode button
 $<HTMLButtonElement>('decodeBtn').addEventListener('click', async () => {
   const coverText = $<HTMLTextAreaElement>('decodeCover').value;
-  const prompt = $<HTMLTextAreaElement>('decodePrompt').value || '';
   const useMock = $<HTMLInputElement>('decodeMock').checked;
   const progressEl = $<HTMLDivElement>('decodeProgress');
   const progressBar = $<HTMLDivElement>('decodeProgressBar');
@@ -198,7 +197,7 @@ $<HTMLButtonElement>('decodeBtn').addEventListener('click', async () => {
       coverText,
       currentSecret,
       client,
-      prompt,
+      '', // Prompt not needed - knock sequence handles payload location
       (phase, current, total) => {
         const percent = total > 0 ? Math.round((current / total) * 100) : 0;
         progressBar.style.width = `${percent}%`;

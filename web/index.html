@@ -518,7 +518,7 @@
  |_____/|_|\___/| .__/   \_____|_|   \__, | .__/ \__|
                 | |                   __/ | |
                 |_|                  |___/|_|   [WEB]</div>
-      <p class="tagline" id="tagline">Plausibly deniable throughput since 2024</p>
+      <p class="tagline" id="tagline">Hide your secrets in the slop</p>
     </header>
 
     <div class="tabs">
@@ -581,7 +581,7 @@ The weary traveler had been walking for</textarea>
         </div>
 
         <div class="checkbox-group">
-          <input type="checkbox" id="encodeMock" checked>
+          <input type="checkbox" id="encodeMock">
           <label for="encodeMock">Use mock client (no model needed, for testing)</label>
         </div>
 
@@ -635,16 +635,9 @@ The weary traveler had been walking for</textarea>
           <textarea id="decodeCover" placeholder="Paste the slop here..."></textarea>
         </div>
 
-        <div class="form-group">
-          <label for="decodePrompt">Prompt (must match what was used to encode)</label>
-          <textarea id="decodePrompt" rows="2">Write a short story about a traveler:
-
-The weary traveler had been walking for</textarea>
-        </div>
-
         <div class="checkbox-group">
-          <input type="checkbox" id="decodeMock" checked>
-          <label for="decodeMock">Use mock client</label>
+          <input type="checkbox" id="decodeMock">
+          <label for="decodeMock">Use mock client (no model needed, for testing)</label>
         </div>
 
         <div class="button-row">
@@ -782,9 +775,19 @@ The weary traveler had been walking for</textarea>
             Frequency analysis? Never heard of her.
           </p>
 
+          <h3>100% Local</h3>
+          <p>
+            <strong>Everything runs in your browser.</strong> The LLM runs locally via WebAssembly—your
+            messages, secrets, and cover text never leave your device. No servers, no tracking, no trust required.
+          </p>
+          <p>
+            The model (~150MB) is downloaded once and cached in your browser.
+            After that, it's all local, all the time.
+          </p>
+
           <h3>FAQ</h3>
           <p><strong>Q: Do I need to load a model?</strong><br>
-          A: For testing, use the mock client (checked by default). For real steganography, load the SmolLM2 model—both sender and receiver must use the same model.</p>
+          A: Yes! Click "Load Model" to download SmolLM2 (~150MB, cached after first load). Both sender and receiver must use the same model. There's also a mock client for testing the UI.</p>
 
           <p><strong>Q: How do I share the secret with someone?</strong><br>
           A: Generate a secret, copy the blob, and send it + the password through a secure channel (Signal, encrypted email, etc.). They'll paste it in to decode your messages.</p>
@@ -797,8 +800,7 @@ The weary traveler had been walking for</textarea>
   </div>
 
   <footer>
-    <div class="joke">Best viewed in Netscape Navigator 4.0 | <span id="slopCounter">69,420</span> messages slopped</div>
-    <div>Made with 🖤 and mass token probability manipulation</div>
+    <div>Made with mass token probability manipulation</div>
   </footer>
 
   <script type="module" src="/src/main.ts"></script>
