@@ -38,7 +38,7 @@ from slopcrypt.compress import (
     compress_payload,
     decompress_payload,
 )
-from slopcrypt.encode import decode_with_knock, encode_with_knock
+from slopcrypt.encode import decode_with_knock_arithmetic, encode_with_knock_arithmetic
 from slopcrypt.lm_client import (
     DEFAULT_MODEL_PATH,
     LlamaCppClient,
@@ -324,8 +324,8 @@ def encode_message(
 
     payload = encrypted
 
-    # Encode using slopcrypt.encode
-    cover_text = encode_with_knock(
+    # Encode using arithmetic coding for provably secure steganography
+    cover_text = encode_with_knock_arithmetic(
         data=payload,
         client=client,
         prompt=prompt,
@@ -362,8 +362,8 @@ def decode_message(
     Returns:
         Decoded message
     """
-    # Step 1: Decode using slopcrypt.encode
-    encrypted_payload = decode_with_knock(
+    # Step 1: Decode using arithmetic coding
+    encrypted_payload = decode_with_knock_arithmetic(
         cover_text=cover_text,
         client=client,
         k=secret["k"],

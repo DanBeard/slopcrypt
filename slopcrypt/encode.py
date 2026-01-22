@@ -26,6 +26,12 @@ from slopcrypt.utils import (
     find_longest_match,
     int_to_bits,
     parse_knock_sequence,
+    TokenProb,
+)
+from slopcrypt.arith_stego import (
+    ArithState,
+    encode_token,
+    decode_token,
 )
 
 DEFAULT_PROMPT = """Write a short story about a traveler:
@@ -276,6 +282,270 @@ def encode_with_knock(
 
     # Return prompt + generated tokens as complete cover text
     return prompt + "".join(tokens)
+
+
+def encode_with_knock_arithmetic(
+    data: bytes,
+    client,
+    prompt: str,
+    k: int,
+    knock: list[int],
+    preamble_tokens: int = 4,
+    suffix_tokens: int = 2,
+    temperature: float = 0.8,
+    verbose: bool = False,
+) -> str:
+    """
+    Encode binary data using arithmetic coding for provably secure steganography.
+
+    Unlike uniform Base-K encoding, arithmetic coding selects tokens proportionally
+    to their natural probability, making the output statistically indistinguishable
+    from normal LLM generation.
+
+    Structure:
+    1. Preamble tokens (sampled naturally)
+    2. Knock sequence (uniform Base-K - unchanged)
+    3. Length header (4 bytes, uniform Base-K - for decoder sync)
+    4. Payload (ARITHMETIC CODED - variable bits per token)
+    5. Suffix tokens (sampled naturally)
+    """
+    bits_per_token = int(math.log2(k))
+
+    # Prepend 4-byte length header (will be encoded uniformly)
+    length_header = len(data).to_bytes(4, "big")
+    length_bits = bytes_to_bits(length_header)
+    payload_bits = bytes_to_bits(data)
+
+    context = prompt
+    tokens = []
+
+    # Phase 1: Generate preamble naturally (sampling) - unchanged
+    if verbose:
+        print(f"Generating {preamble_tokens} preamble tokens...", file=sys.stderr)
+
+    preamble_indices = []
+    for _ in range(preamble_tokens):
+        dist = client.get_token_distribution(context)
+        if not dist:
+            break
+        top_k = filter_prefix_tokens(dist, k)
+        if not top_k:
+            break
+        idx, token = sample_from_distribution(top_k, temperature)
+        tokens.append(token)
+        preamble_indices.append(idx)
+        context += token
+
+    if find_knock_sequence(preamble_indices, knock) != -1:
+        raise ValueError("Knock sequence found in preamble")
+
+    # Phase 2: Encode knock sequence (uniform Base-K) - unchanged
+    if verbose:
+        print(f"Encoding knock sequence: {knock}", file=sys.stderr)
+
+    for idx in knock:
+        dist = client.get_token_distribution(context)
+        if not dist:
+            raise RuntimeError("Empty distribution while encoding knock")
+        top_k = filter_prefix_tokens(dist, k)
+        if not top_k:
+            raise RuntimeError("No valid tokens while encoding knock")
+        actual_idx = idx % len(top_k) if idx >= len(top_k) else idx
+        token = top_k[actual_idx].token
+        tokens.append(token)
+        context += token
+
+    # Phase 3: Encode length header (uniform Base-K for decoder sync)
+    if verbose:
+        print(f"Encoding length header ({len(data)} bytes)...", file=sys.stderr)
+
+    bit_idx = 0
+    while bit_idx < len(length_bits):
+        chunk = length_bits[bit_idx : bit_idx + bits_per_token]
+        while len(chunk) < bits_per_token:
+            chunk.append(0)
+        index = bits_to_int(chunk)
+
+        dist = client.get_token_distribution(context)
+        if not dist:
+            break
+        top_k = filter_prefix_tokens(dist, k)
+        if not top_k:
+            break
+        if index >= len(top_k):
+            index = index % len(top_k)
+
+        token = top_k[index].token
+        tokens.append(token)
+        context += token
+        bit_idx += bits_per_token
+
+    # Phase 4: Encode payload using ARITHMETIC CODING
+    if verbose:
+        print(f"Encoding {len(data)} bytes payload (arithmetic)...", file=sys.stderr)
+
+    arith_state = ArithState()
+    bit_idx = 0
+
+    while bit_idx < len(payload_bits):
+        dist = client.get_token_distribution(context)
+        if not dist:
+            if verbose:
+                print(f"Warning: Empty distribution at token {len(tokens)}", file=sys.stderr)
+            break
+
+        top_k = filter_prefix_tokens(dist, k)
+        if not top_k:
+            if verbose:
+                print(f"Warning: No valid tokens at {len(tokens)}", file=sys.stderr)
+            break
+
+        # Use arithmetic coding to select token
+        selected_token, new_bit_idx, arith_state = encode_token(
+            payload_bits, bit_idx, arith_state, top_k
+        )
+
+        tokens.append(selected_token.token)
+        context += selected_token.token
+        bit_idx = new_bit_idx
+
+    # Phase 5: Generate suffix naturally (sampling) - unchanged
+    if verbose:
+        print(f"Generating {suffix_tokens} suffix tokens...", file=sys.stderr)
+
+    for _ in range(suffix_tokens):
+        dist = client.get_token_distribution(context)
+        if not dist:
+            break
+        top_k = filter_prefix_tokens(dist, k)
+        if not top_k:
+            break
+        _, token = sample_from_distribution(top_k, temperature)
+        tokens.append(token)
+        context += token
+
+    if verbose:
+        print(f"Encoding complete: {len(tokens)} tokens", file=sys.stderr)
+
+    return prompt + "".join(tokens)
+
+
+def decode_with_knock_arithmetic(
+    cover_text: str,
+    client,
+    k: int,
+    knock: list[int],
+    prompt: str = "",
+    verbose: bool = False,
+) -> bytes:
+    """
+    Decode arithmetic-coded payload from cover text.
+
+    Must use the same model and k value as encoding.
+    """
+    bits_per_token = int(math.log2(k))
+
+    # Strip prompt if present
+    if prompt and cover_text.startswith(prompt):
+        context = prompt
+        remaining = cover_text[len(prompt):]
+    else:
+        context = ""
+        remaining = cover_text
+
+    # Phase 1: Scan all tokens and collect indices (same as uniform decode)
+    if verbose:
+        print(f"Scanning for knock sequence {knock}...", file=sys.stderr)
+
+    token_indices = []
+    token_probs: list[TokenProb] = []  # Store for arithmetic decoding
+    top_k_sequence: list[list[TokenProb]] = []  # Distribution at each position
+
+    while remaining:
+        dist = client.get_token_distribution(context)
+        if not dist:
+            context += remaining[0]
+            remaining = remaining[1:]
+            continue
+
+        top_k = filter_prefix_tokens(dist, k)
+        if not top_k:
+            context += remaining[0]
+            remaining = remaining[1:]
+            continue
+
+        matched, matched_index = find_longest_match(remaining, top_k)
+
+        if matched is None:
+            context += remaining[0]
+            remaining = remaining[1:]
+            continue
+
+        token_indices.append(matched_index)
+        token_probs.append(matched)
+        top_k_sequence.append(top_k)
+        context += matched.token
+        remaining = remaining[len(matched.token):]
+
+    # Phase 2: Find knock sequence
+    knock_pos = find_knock_sequence(token_indices, knock)
+    if knock_pos == -1:
+        raise ValueError("Knock sequence not found in cover text")
+
+    if verbose:
+        print(f"Found knock at position {knock_pos}", file=sys.stderr)
+
+    # Phase 3: Decode length header (uniform Base-K)
+    length_start = knock_pos + len(knock)
+    length_tokens = (32 + bits_per_token - 1) // bits_per_token  # ceil(32 / bits_per_token)
+
+    length_bits = []
+    for i in range(length_tokens):
+        pos = length_start + i
+        if pos >= len(token_indices):
+            break
+        idx = token_indices[pos]
+        token_bits = int_to_bits(idx, bits_per_token)
+        length_bits.extend(token_bits)
+
+    if len(length_bits) < 32:
+        raise ValueError("Not enough tokens for length header")
+
+    length_bytes = bits_to_bytes(length_bits[:32])
+    payload_len = int.from_bytes(length_bytes, "big")
+
+    if verbose:
+        print(f"Payload length: {payload_len} bytes", file=sys.stderr)
+
+    # Phase 4: Decode payload using ARITHMETIC CODING
+    payload_start = length_start + length_tokens
+    payload_tokens = token_probs[payload_start:]
+    payload_top_k = top_k_sequence[payload_start:]
+
+    if verbose:
+        print(f"Decoding {len(payload_tokens)} payload tokens (arithmetic)...", file=sys.stderr)
+
+    arith_state = ArithState()
+    all_bits: list[int] = []
+
+    for i, token in enumerate(payload_tokens):
+        if i >= len(payload_top_k):
+            break
+
+        top_k = payload_top_k[i]
+        if not top_k:
+            continue
+
+        decoded_bits, arith_state = decode_token(token, arith_state, top_k)
+        all_bits.extend(decoded_bits)
+
+        # Stop if we have enough bits
+        if len(all_bits) >= payload_len * 8:
+            break
+
+    # Convert bits to bytes
+    result = bits_to_bytes(all_bits)
+    return result[:payload_len]
 
 
 def decode(

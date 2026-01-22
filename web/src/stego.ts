@@ -3,7 +3,7 @@
  * Port of stego_basek.py lines 147-503.
  */
 
-import type { LMClient, Secret } from './types.ts';
+import type { LMClient, Secret, TokenProb } from './types.ts';
 import { NONCE_SIZE, DEFAULT_PROMPT } from './types.ts';
 import { bytesToBits, bitsToBytes, bitsToInt, intToBits } from './bits.ts';
 import {
@@ -15,6 +15,7 @@ import {
 } from './tokens.ts';
 import { compressPayload, decompressPayload, DEFAULT_FREQUENCIES } from './huffman.ts';
 import { encryptPayload, decryptPayload } from './crypto.ts';
+import { createArithState, encodeToken, decodeToken } from './arith-stego.ts';
 
 /**
  * Progress callback for long-running operations.
@@ -22,12 +23,14 @@ import { encryptPayload, decryptPayload } from './crypto.ts';
 export type ProgressCallback = (phase: string, current: number, total: number) => void;
 
 /**
- * Encode binary data with knock sequence for natural-looking cover text.
+ * Encode binary data with knock sequence using arithmetic coding.
  *
- * 1. Generate preamble_tokens naturally (sampling)
- * 2. Encode knock sequence
- * 3. Encode length + payload
- * 4. Generate suffix_tokens naturally
+ * Structure:
+ * 1. Preamble tokens (sampled naturally)
+ * 2. Knock sequence (uniform Base-K)
+ * 3. Length header (4 bytes, uniform Base-K - for decoder sync)
+ * 4. Payload (ARITHMETIC CODED - variable bits per token)
+ * 5. Suffix tokens (sampled naturally)
  */
 export async function encodeWithKnock(
   data: Uint8Array,
@@ -42,30 +45,20 @@ export async function encodeWithKnock(
 ): Promise<string> {
   const bitsPerToken = Math.log2(k);
 
-  // Prepend 4-byte length header
+  // Convert length header and payload to bits separately
   const lengthHeader = new Uint8Array(4);
   lengthHeader[0] = (data.length >> 24) & 0xff;
   lengthHeader[1] = (data.length >> 16) & 0xff;
   lengthHeader[2] = (data.length >> 8) & 0xff;
   lengthHeader[3] = data.length & 0xff;
 
-  const fullData = new Uint8Array(lengthHeader.length + data.length);
-  fullData.set(lengthHeader);
-  fullData.set(data, lengthHeader.length);
-
-  const bitStream = bytesToBits(fullData);
-
-  // Check if knock sequence would appear in payload
-  if (checkKnockInData(bitStream, knock, bitsPerToken)) {
-    throw new Error(
-      'Knock sequence would appear in encoded payload, use different knock sequence'
-    );
-  }
+  const lengthBits = bytesToBits(lengthHeader);
+  const payloadBits = bytesToBits(data);
 
   let context = prompt;
   const tokens: string[] = [];
 
-  // Phase 1: Generate preamble naturally (sampling)
+  // Phase 1: Generate preamble naturally (sampling) - unchanged
   onProgress?.('Generating preamble', 0, preambleTokens);
   const preambleIndices: number[] = [];
 
@@ -90,7 +83,7 @@ export async function encodeWithKnock(
     );
   }
 
-  // Phase 2: Encode knock sequence
+  // Phase 2: Encode knock sequence (uniform Base-K) - unchanged
   onProgress?.('Encoding knock', 0, knock.length);
 
   for (let i = 0; i < knock.length; i++) {
@@ -112,15 +105,13 @@ export async function encodeWithKnock(
     onProgress?.('Encoding knock', i + 1, knock.length);
   }
 
-  // Phase 3: Encode length + payload
-  const totalPayloadTokens = Math.ceil(bitStream.length / bitsPerToken);
-  onProgress?.('Encoding payload', 0, totalPayloadTokens);
+  // Phase 3: Encode length header (uniform Base-K for decoder sync)
+  const lengthTokensNeeded = Math.ceil(lengthBits.length / bitsPerToken);
+  onProgress?.('Encoding length', 0, lengthTokensNeeded);
 
   let bitIdx = 0;
-  let payloadTokenCount = 0;
-
-  while (bitIdx < bitStream.length) {
-    const chunk = bitStream.slice(bitIdx, bitIdx + bitsPerToken);
+  while (bitIdx < lengthBits.length) {
+    const chunk = lengthBits.slice(bitIdx, bitIdx + bitsPerToken);
     while (chunk.length < bitsPerToken) {
       chunk.push(0);
     }
@@ -138,6 +129,35 @@ export async function encodeWithKnock(
     tokens.push(token);
     context += token;
     bitIdx += bitsPerToken;
+  }
+
+  // Phase 4: Encode payload using ARITHMETIC CODING
+  const totalPayloadTokens = Math.ceil(payloadBits.length / bitsPerToken);
+  onProgress?.('Encoding payload', 0, totalPayloadTokens);
+
+  let arithState = createArithState();
+  bitIdx = 0;
+  let payloadTokenCount = 0;
+
+  while (bitIdx < payloadBits.length) {
+    const dist = await client.getTokenDistribution(context);
+    if (!dist.length) break;
+
+    const topK = filterPrefixTokens(dist, k);
+    if (!topK.length) break;
+
+    // Use arithmetic coding to select token
+    const [selectedToken, newBitIdx, newState] = encodeToken(
+      payloadBits,
+      bitIdx,
+      arithState,
+      topK
+    );
+
+    tokens.push(selectedToken.token);
+    context += selectedToken.token;
+    bitIdx = newBitIdx;
+    arithState = newState;
     payloadTokenCount++;
 
     if (payloadTokenCount % 10 === 0) {
@@ -145,7 +165,7 @@ export async function encodeWithKnock(
     }
   }
 
-  // Phase 4: Generate suffix naturally (sampling)
+  // Phase 5: Generate suffix naturally (sampling) - unchanged
   onProgress?.('Generating suffix', 0, suffixTokens);
 
   for (let i = 0; i < suffixTokens; i++) {
@@ -168,7 +188,7 @@ export async function encodeWithKnock(
 }
 
 /**
- * Decode binary data from cover text with knock sequence.
+ * Decode binary data from cover text with knock sequence using arithmetic coding.
  */
 export async function decodeWithKnock(
   coverText: string,
@@ -193,9 +213,11 @@ export async function decodeWithKnock(
   }
 
   const tokenIndices: number[] = [];
+  const tokenProbs: TokenProb[] = []; // Store for arithmetic decoding
+  const topKSequence: TokenProb[][] = []; // Distribution at each position
   let tokenCount = 0;
 
-  // Phase 1: Scan all tokens and collect indices
+  // Phase 1: Scan all tokens and collect indices and distributions
   onProgress?.('Scanning tokens', 0, remaining.length);
 
   while (remaining.length > 0) {
@@ -222,6 +244,8 @@ export async function decodeWithKnock(
     }
 
     tokenIndices.push(matchedIndex);
+    tokenProbs.push(matched);
+    topKSequence.push(topK);
     context += matched.token;
     remaining = remaining.slice(matched.token.length);
     tokenCount++;
@@ -238,53 +262,62 @@ export async function decodeWithKnock(
     throw new Error('Knock sequence not found in cover text');
   }
 
-  // Phase 3: Extract payload indices (after knock)
-  const payloadStart = knockPos + knock.length;
-  const payloadIndices = tokenIndices.slice(payloadStart);
+  // Phase 3: Decode length header (uniform Base-K)
+  const lengthStart = knockPos + knock.length;
+  const lengthTokens = Math.ceil(32 / bitsPerToken); // 4 bytes = 32 bits
 
-  onProgress?.('Decoding payload', 0, payloadIndices.length);
-
-  // Phase 4: Convert indices to bits
-  const bits: number[] = [];
-
-  for (let i = 0; i < payloadIndices.length; i++) {
-    const idx = payloadIndices[i];
+  const lengthBits: number[] = [];
+  for (let i = 0; i < lengthTokens; i++) {
+    const pos = lengthStart + i;
+    if (pos >= tokenIndices.length) break;
+    const idx = tokenIndices[pos];
     const tokenBits = intToBits(idx, bitsPerToken);
-    bits.push(...tokenBits);
+    lengthBits.push(...tokenBits);
+  }
 
-    // Check if we have enough bits to read the length header
-    if (bits.length >= 32) {
-      const lengthBits = bits.slice(0, 32);
-      const payloadLen = bitsToInt(lengthBits);
-      const totalBitsNeeded = 32 + payloadLen * 8;
+  if (lengthBits.length < 32) {
+    throw new Error('Not enough tokens for length header');
+  }
 
-      if (bits.length >= totalBitsNeeded) {
-        break;
-      }
+  const lengthBytes = bitsToBytes(lengthBits.slice(0, 32));
+  const payloadLen = (lengthBytes[0] << 24) | (lengthBytes[1] << 16) | (lengthBytes[2] << 8) | lengthBytes[3];
+
+  // Phase 4: Decode payload using ARITHMETIC CODING
+  const payloadStart = lengthStart + lengthTokens;
+  const payloadTokens = tokenProbs.slice(payloadStart);
+  const payloadTopK = topKSequence.slice(payloadStart);
+
+  onProgress?.('Decoding payload', 0, payloadTokens.length);
+
+  let arithState = createArithState();
+  const allBits: number[] = [];
+
+  for (let i = 0; i < payloadTokens.length; i++) {
+    if (i >= payloadTopK.length) break;
+
+    const topK = payloadTopK[i];
+    if (!topK.length) continue;
+
+    const token = payloadTokens[i];
+    const [decodedBits, newState] = decodeToken(token, arithState, topK);
+    allBits.push(...decodedBits);
+    arithState = newState;
+
+    // Stop if we have enough bits
+    if (allBits.length >= payloadLen * 8) {
+      break;
     }
 
     if (i % 20 === 0) {
-      onProgress?.('Decoding payload', i, payloadIndices.length);
+      onProgress?.('Decoding payload', i, payloadTokens.length);
     }
   }
 
   onProgress?.('Complete', 1, 1);
 
   // Convert bits to bytes
-  const allBytes = bitsToBytes(bits);
-
-  if (allBytes.length < 4) {
-    return new Uint8Array(0);
-  }
-
-  // Extract length and payload
-  let payloadLen = (allBytes[0] << 24) | (allBytes[1] << 16) | (allBytes[2] << 8) | allBytes[3];
-
-  if (payloadLen > allBytes.length - 4) {
-    payloadLen = allBytes.length - 4;
-  }
-
-  return allBytes.slice(4, 4 + payloadLen);
+  const result = bitsToBytes(allBits);
+  return result.slice(0, payloadLen);
 }
 
 /**
