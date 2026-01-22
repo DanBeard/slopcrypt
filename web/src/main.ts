@@ -207,6 +207,10 @@ $<HTMLButtonElement>('decodeBtn').addEventListener('click', async () => {
   let client: LMClient;
   try {
     client = getClient(useMock);
+    // Reset wllama context to ensure fresh state for decode
+    if (!useMock && wllamaClient) {
+      wllamaClient.resetContext();
+    }
   } catch (err) {
     statusEl.textContent = String(err);
     statusEl.className = 'status error';
@@ -225,7 +229,7 @@ $<HTMLButtonElement>('decodeBtn').addEventListener('click', async () => {
       coverText,
       currentSecret,
       client,
-      '', // Prompt not needed - knock sequence handles payload location
+      '', // Prompt not needed - knock sequence finds payload location
       (phase, current, total) => {
         const percent = total > 0 ? Math.round((current / total) * 100) : 0;
         progressBar.style.width = `${percent}%`;
