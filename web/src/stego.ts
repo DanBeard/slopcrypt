@@ -85,6 +85,7 @@ export async function encodeWithKnock(
 
   // Phase 2: Encode knock sequence (uniform Base-K) - unchanged
   onProgress?.('Encoding knock', 0, knock.length);
+  console.log('[ENCODE] Starting knock sequence encoding, knock:', knock);
 
   for (let i = 0; i < knock.length; i++) {
     const idx = knock[i];
@@ -100,6 +101,7 @@ export async function encodeWithKnock(
 
     const actualIdx = idx >= topK.length ? idx % topK.length : idx;
     const token = topK[actualIdx].token;
+    console.log(`[ENCODE] Knock[${i}]: idx=${actualIdx}, token="${token}", topK[0..2]:`, topK.slice(0, 3).map(t => t.token));
     tokens.push(token);
     context += token;
     onProgress?.('Encoding knock', i + 1, knock.length);
@@ -246,6 +248,10 @@ export async function decodeWithKnock(
     tokenIndices.push(matchedIndex);
     tokenProbs.push(matched);
     topKSequence.push(topK);
+    // Debug: log first 15 tokens matched
+    if (tokenCount < 15) {
+      console.log(`[DECODE] Token ${tokenCount}: idx=${matchedIndex}, token="${matched.token}", topK[0..2]:`, topK.slice(0, 3).map(t => t.token));
+    }
     context += matched.token;
     remaining = remaining.slice(matched.token.length);
     tokenCount++;
@@ -256,11 +262,15 @@ export async function decodeWithKnock(
   }
 
   // Phase 2: Find knock sequence
+  console.log('[DECODE] Token indices recorded:', tokenIndices.slice(0, 30));
+  console.log('[DECODE] Looking for knock:', knock);
   const knockPos = findKnockSequence(tokenIndices, knock);
 
   if (knockPos === -1) {
+    console.log('[DECODE] Knock NOT FOUND. First 20 tokens:', tokenProbs.slice(0, 20).map(t => t.token));
     throw new Error('Knock sequence not found in cover text');
   }
+  console.log('[DECODE] Found knock at position:', knockPos);
 
   // Phase 3: Decode length header (uniform Base-K)
   const lengthStart = knockPos + knock.length;
