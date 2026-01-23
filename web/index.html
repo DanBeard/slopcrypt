@@ -756,7 +756,7 @@ The weary traveler had been walking for</textarea>
           <h3>How It Works</h3>
           <div class="diagram">┌─────────────┐    ┌─────────────┐    ┌─────────────┐
 │ Your Secret │ →  │  Compress   │ →  │   Encrypt   │
-│   Message   │    │  (Huffman)  │    │ (AES-256)   │
+│   Message   │    │  (Arith.)   │    │ (AES-256)   │
 └─────────────┘    └─────────────┘    └─────────────┘
                                              │
                                              ▼
@@ -765,14 +765,16 @@ The weary traveler had been walking for</textarea>
 │   (Slop)    │    │   Tokens    │    │   Choices   │
 └─────────────┘    └─────────────┘    └─────────────┘</div>
           <p>
-            Each token encodes log₂(K) bits by selecting from the
-            top-K probable next tokens. With K=16, that's 4 bits per word.
+            Using arithmetic coding, each token encodes a variable number of
+            bits based on the model's probability distribution. Higher entropy
+            contexts encode more bits; low entropy tokens (where the model is
+            very confident) can be skipped entirely for more natural text.
           </p>
 
           <h3>Is It Secure?</h3>
-          <p><strong>Yes.</strong> Your message is:</p>
+          <p>Your message is protected by multiple layers:</p>
           <ul class="security-list">
-            <li>Compressed (Huffman coding)</li>
+            <li>Compressed (arithmetic coding)</li>
             <li>Encrypted (AES-256-GCM)</li>
             <li>Hidden (steganography)</li>
           </ul>
@@ -783,6 +785,15 @@ The weary traveler had been walking for</textarea>
           <p style="color: var(--text-muted); font-style: italic;">
             Frequency analysis? Never heard of her.
           </p>
+
+          <div class="card callout warning" style="margin: 1rem 0;">
+            <h3>⚠️ No Third-Party Review</h3>
+            <p style="margin-bottom: 0;">
+              This is an experimental project that <strong>has not been audited</strong> by security professionals.
+              The cryptographic primitives (AES-256-GCM, PBKDF2) are standard, but the overall system
+              design hasn't been vetted. Don't rely on this if your life or liberty depends on it.
+            </p>
+          </div>
 
           <h3>100% Local</h3>
           <p>
@@ -811,13 +822,30 @@ The weary traveler had been walking for</textarea>
 
           <p><strong>Q: Why "slop"?</strong><br>
           A: It's internet slang for low-quality AI-generated content. We're reclaiming it for good (or at least for fun).</p>
+
+          <p><strong>Q: Has this been security audited?</strong><br>
+          A: No. This is an experimental project that hasn't been reviewed by security professionals. Don't rely on it if your life or liberty depends on it. The cryptographic primitives (AES-256-GCM, PBKDF2) are standard, but the overall system hasn't been vetted.</p>
+
+          <p><strong>Q: Who made this?</strong><br>
+          A: This was <em>vibecoded</em>—a human mass-produced tokens with Claude until something useful fell out. The LLM stared into the abyss of token probabilities, and the abyss stared back. We're just being honest about our slop-making process.</p>
+
+          <h3>Further Reading</h3>
+          <p>Academic papers and implementations we learned from:</p>
+          <ul style="list-style: disc; padding-left: 1.5rem; margin-bottom: 1rem;">
+            <li><a href="https://arxiv.org/abs/2503.19499" target="_blank" style="color: var(--secondary);">SparSamp</a> (USENIX SEC 2025) — Sparse sampling for provably undetectable steganography</li>
+            <li><a href="https://arxiv.org/abs/2501.00786" target="_blank" style="color: var(--secondary);">ShiMer</a> (2025) — Efficient LLM steganography via shielding and merging</li>
+            <li><a href="https://ieeexplore.ieee.org/document/10179430" target="_blank" style="color: var(--secondary);">Discop</a> (IEEE S&amp;P 2023) — Distribution-copy based steganography</li>
+            <li><a href="https://eprint.iacr.org/2021/686.pdf" target="_blank" style="color: var(--secondary);">Meteor</a> (2021) — Cryptographically secure steganography for realistic distributions</li>
+            <li><a href="https://github.com/shawnz/textcoder" target="_blank" style="color: var(--secondary);">textcoder</a> — Reference implementation that inspired this project</li>
+          </ul>
         </div>
       </div>
     </div>
   </div>
 
   <footer>
-    <div>Made with mass token probability manipulation</div>
+    <div class="joke">Made with mass token probability manipulation</div>
+    <div>Vibecoded with <a href="https://claude.ai" target="_blank">Claude</a></div>
   </footer>
 
   <script type="module" src="/src/main.ts"></script>

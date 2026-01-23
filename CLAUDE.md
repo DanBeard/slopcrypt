@@ -6,7 +6,7 @@ Guidance for Claude Code when working in this repository.
 
 **Hide your data in slop!**
 
-LLM steganography that embeds binary data in AI-generated text. Each token encodes `log2(K)` bits by picking from the top-K most probable tokens. Yes, we're weaponizing the slop. No, we're not sorry.
+LLM steganography that embeds binary data in AI-generated text. Using arithmetic coding, each token encodes a variable number of bits based on the model's probability distribution. Yes, we're weaponizing the slop. No, we're not sorry.
 
 ## Quick Reference
 
@@ -55,7 +55,7 @@ tests/
 
 **Encoding flow:**
 ```
-Message → Huffman compress → AES encrypt → Base-K encode into tokens
+Message → Arithmetic compress → AES encrypt → Stego encode into tokens
 [Preamble] → [Knock sequence] → [Length + Encrypted payload] → [Suffix]
 ```
 
