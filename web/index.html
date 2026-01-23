@@ -667,8 +667,8 @@ The weary traveler had been walking for</textarea>
             <label for="secretK">K (tokens per step)</label>
             <select id="secretK">
               <option value="4">4 (2 bits/token)</option>
-              <option value="8">8 (3 bits/token)</option>
-              <option value="16" selected>16 (4 bits/token)</option>
+              <option value="8" selected>8 (3 bits/token, recommended)</option>
+              <option value="16">16 (4 bits/token)</option>
               <option value="32">32 (5 bits/token)</option>
             </select>
           </div>
@@ -679,6 +679,14 @@ The weary traveler had been walking for</textarea>
           <div class="form-group">
             <label for="secretSuffix">Suffix tokens</label>
             <input type="number" id="secretSuffix" value="2" min="0" max="100">
+          </div>
+        </div>
+
+        <div class="row">
+          <div class="form-group">
+            <label for="secretEntropyThreshold">Entropy threshold</label>
+            <input type="number" id="secretEntropyThreshold" value="0.9" min="0" max="1" step="0.05">
+            <div class="hint">Skip encoding when top token prob > threshold (0 = disabled, 0.9 = natural text)</div>
           </div>
         </div>
 

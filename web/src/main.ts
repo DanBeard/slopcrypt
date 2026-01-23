@@ -257,6 +257,7 @@ $<HTMLButtonElement>('generateSecretBtn').addEventListener('click', async () => 
   const k = parseInt($<HTMLSelectElement>('secretK').value);
   const preamble = parseInt($<HTMLInputElement>('secretPreamble').value) || 4;
   const suffix = parseInt($<HTMLInputElement>('secretSuffix').value) || 2;
+  const entropyThreshold = parseFloat($<HTMLInputElement>('secretEntropyThreshold').value) || 0.0;
   const password = $<HTMLInputElement>('secretPassword').value;
   const notes = $<HTMLInputElement>('secretNotes').value;
   const statusEl = $<HTMLDivElement>('secretStatus');
@@ -272,6 +273,7 @@ $<HTMLButtonElement>('generateSecretBtn').addEventListener('click', async () => 
       k,
       preambleTokens: preamble,
       suffixTokens: suffix,
+      entropyThreshold,
       notes,
     });
 
@@ -355,6 +357,7 @@ function updateSecretInfo(): void {
     <div><dt>Preamble tokens:</dt><dd>${currentSecret.preamble_tokens}</dd></div>
     <div><dt>Suffix tokens:</dt><dd>${currentSecret.suffix_tokens}</dd></div>
     <div><dt>Temperature:</dt><dd>${currentSecret.temperature}</dd></div>
+    <div><dt>Entropy threshold:</dt><dd>${currentSecret.entropy_threshold ?? 0}</dd></div>
     <div><dt>Huffman entries:</dt><dd>${Object.keys(currentSecret.huffman_freq).length}</dd></div>
     ${currentSecret.notes ? `<div><dt>Notes:</dt><dd>${currentSecret.notes}</dd></div>` : ''}
   `;
@@ -382,9 +385,10 @@ $<HTMLButtonElement>('quickGenerateBtn').addEventListener('click', async () => {
 
   try {
     currentSecret = generateSecret({
-      k: 16,
+      k: 8,
       preambleTokens: 4,
       suffixTokens: 2,
+      entropyThreshold: 0.9,
     });
 
     const blob = await encryptSecretBlob(currentSecret, password);
