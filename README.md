@@ -154,4 +154,4 @@ Academic papers and implementations we learned from:
 
 ---
 
-*Vibecoded with [Claude](https://claude.ai)*
+*Vibecoded with Claude*
