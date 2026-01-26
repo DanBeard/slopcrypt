@@ -10,7 +10,6 @@ import {
   filterPrefixTokens,
   findLongestMatch,
   findKnockSequence,
-  checkKnockInData,
   sampleFromDistribution,
 } from './tokens.ts';
 import { compressPayload, decompressPayload, DEFAULT_FREQUENCIES } from './huffman.ts';
@@ -31,6 +30,9 @@ export type ProgressCallback = (phase: string, current: number, total: number) =
  * 3. Length header (4 bytes, uniform Base-K - for decoder sync)
  * 4. Payload (ARITHMETIC CODED - variable bits per token)
  * 5. Suffix tokens (sampled naturally)
+ *
+ * @param systemPrompt - Hidden prompt prepended to context for LLM probability
+ *                       calculations but NOT included in output.
  */
 export async function encodeWithKnock(
   data: Uint8Array,
@@ -42,6 +44,7 @@ export async function encodeWithKnock(
   suffixTokens: number = 2,
   temperature: number = 0.8,
   entropyThreshold: number = 0.0,
+  systemPrompt: string = '',
   onProgress?: ProgressCallback
 ): Promise<string> {
   const bitsPerToken = Math.log2(k);
@@ -56,7 +59,8 @@ export async function encodeWithKnock(
   const lengthBits = bytesToBits(lengthHeader);
   const payloadBits = bytesToBits(data);
 
-  let context = prompt;
+  // Context for LLM includes systemPrompt, but output won't
+  let context = systemPrompt + prompt;
   const tokens: string[] = [];
 
   // Phase 1: Generate preamble naturally (sampling) - unchanged
@@ -191,6 +195,10 @@ export async function encodeWithKnock(
 
 /**
  * Decode binary data from cover text with knock sequence using arithmetic coding.
+ *
+ * @param systemPrompt - Hidden prompt that was prepended to context during encoding.
+ *                       Must match exactly for correct probability calculations.
+ *                       Note: systemPrompt is NOT in the coverText.
  */
 export async function decodeWithKnock(
   coverText: string,
@@ -199,19 +207,21 @@ export async function decodeWithKnock(
   knock: number[],
   prompt: string = '',
   entropyThreshold: number = 0.0,
+  systemPrompt: string = '',
   onProgress?: ProgressCallback
 ): Promise<Uint8Array> {
   const bitsPerToken = Math.log2(k);
 
-  // If prompt provided and coverText starts with it, strip prompt
+  // Strip user prompt from coverText (systemPrompt is NOT in coverText)
+  // Context for LLM includes systemPrompt for correct probability calculations
   let context: string;
   let remaining: string;
 
   if (prompt && coverText.startsWith(prompt)) {
-    context = prompt;
+    context = systemPrompt + prompt;
     remaining = coverText.slice(prompt.length);
   } else {
-    context = '';
+    context = systemPrompt;
     remaining = coverText;
   }
 
@@ -366,6 +376,7 @@ export async function encodeMessage(
     secret.suffix_tokens,
     secret.temperature,
     secret.entropy_threshold || 0.0,
+    secret.system_prompt || '',
     onProgress
   );
 
@@ -390,6 +401,7 @@ export async function decodeMessage(
     secret.knock,
     prompt,
     secret.entropy_threshold || 0.0,
+    secret.system_prompt || '',
     onProgress
   );
 

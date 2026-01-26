@@ -435,6 +435,185 @@ describe('FixedDistributionClient', () => {
   });
 });
 
+describe('Secret Blob Compression', () => {
+  it('generates secrets with null huffman_freq by default', () => {
+    const secret = generateSecret({ k: 16 });
+    expect(secret.huffman_freq).toBeNull();
+  });
+
+  it('stores custom frequencies when provided', () => {
+    const secret = generateSecret({
+      k: 16,
+      huffmanSample: new TextEncoder().encode('custom sample text'),
+    });
+    expect(secret.huffman_freq).not.toBeNull();
+    expect(typeof secret.huffman_freq).toBe('object');
+  });
+
+  it('roundtrips secrets with null huffman_freq', async () => {
+    const secret = generateSecret({ k: 16, knock: [1, 2, 3, 4, 5, 6] });
+    const password = 'test123';
+
+    const encrypted = await encryptSecretBlob(secret, password);
+    const decrypted = await decryptSecretBlob(encrypted, password);
+
+    expect(decrypted.huffman_freq).toBeNull();
+    expect(decrypted.k).toBe(16);
+    expect(decrypted.knock).toEqual([1, 2, 3, 4, 5, 6]);
+  });
+
+  it('produces compressed blobs that are smaller than uncompressed', async () => {
+    const secret = generateSecret({ k: 16 });
+    const password = 'test123';
+
+    const encrypted = await encryptSecretBlob(secret, password);
+
+    // With null huffman_freq + zlib compression, blob should be ~300-400 chars
+    expect(encrypted.length).toBeLessThan(500);
+  });
+
+  it('encode/decode works with null huffman_freq secret', async () => {
+    const client = new FixedDistributionClient(32);
+    const secret = generateSecret({
+      k: 16,
+      knock: [0, 1, 2, 3, 4, 5],
+      preambleTokens: 5,
+      suffixTokens: 5,
+    });
+
+    expect(secret.huffman_freq).toBeNull();
+
+    const message = new TextEncoder().encode('Test with null frequencies');
+    const prompt = 'Test: ';
+
+    const coverText = await encodeMessage(message, secret, client, prompt, true);
+    const decoded = await decodeMessage(coverText, secret, client, prompt);
+
+    expect(decoded).toEqual(message);
+  });
+
+  it('decrypts Python-generated compressed blobs', async () => {
+    // Load Python-generated compressed fixtures
+    const path = join(__dirname, '../../tests/fixtures/secret_blobs_py_compressed.json');
+    if (!existsSync(path)) {
+      console.warn('Skipping: secret_blobs_py_compressed.json not found');
+      return;
+    }
+
+    const pyBlobs = JSON.parse(readFileSync(path, 'utf-8'));
+
+    for (const blob of pyBlobs.blobs) {
+      const secret = await decryptSecretBlob(blob.encrypted, blob.password);
+
+      expect(secret.version).toBe(blob.expected.version);
+      expect(secret.k).toBe(blob.expected.k);
+      expect(secret.knock).toEqual(blob.expected.knock);
+      expect(secret.preamble_tokens).toBe(blob.expected.preamble_tokens);
+      expect(secret.suffix_tokens).toBe(blob.expected.suffix_tokens);
+      expect(secret.temperature).toBeCloseTo(blob.expected.temperature, 3);
+
+      // huffman_freq should be null (Python compressed format uses None)
+      if (blob.expected.huffman_freq_is_none) {
+        expect(secret.huffman_freq).toBeNull();
+      }
+    }
+  });
+});
+
+describe('System Prompt Feature', () => {
+  it('generates secrets with system_prompt', () => {
+    const systemPrompt = 'You are a weather bot. Write a weather report:\n\n';
+    const secret = generateSecret({
+      k: 16,
+      systemPrompt,
+    });
+
+    expect(secret.system_prompt).toBe(systemPrompt);
+  });
+
+  it('defaults system_prompt to empty string', () => {
+    const secret = generateSecret({ k: 16 });
+    expect(secret.system_prompt).toBe('');
+  });
+
+  it('encodes and decodes with system_prompt', async () => {
+    const client = new FixedDistributionClient(32);
+    const systemPrompt = 'You are a helpful assistant.\n\n';
+    const secret = generateSecret({
+      k: 16,
+      knock: [0, 1, 2, 3, 4, 5],
+      preambleTokens: 5,
+      suffixTokens: 5,
+      systemPrompt,
+    });
+
+    const message = new TextEncoder().encode('Secret message with system prompt');
+    const prompt = 'Test: ';
+
+    const coverText = await encodeMessage(message, secret, client, prompt, true);
+    const decoded = await decodeMessage(coverText, secret, client, prompt);
+
+    expect(decoded).toEqual(message);
+  });
+
+  it('cover text does not contain system_prompt', async () => {
+    const client = new FixedDistributionClient(32);
+    const systemPrompt = 'HIDDEN SYSTEM PROMPT - THIS SHOULD NOT APPEAR';
+    const secret = generateSecret({
+      k: 16,
+      knock: [0, 1, 2, 3, 4, 5],
+      preambleTokens: 5,
+      suffixTokens: 5,
+      systemPrompt,
+    });
+
+    const message = new TextEncoder().encode('Test');
+    const prompt = 'Visible prompt: ';
+
+    const coverText = await encodeMessage(message, secret, client, prompt, true);
+
+    // Cover text should start with the user prompt, not system_prompt
+    expect(coverText.startsWith(prompt)).toBe(true);
+    expect(coverText.includes(systemPrompt)).toBe(false);
+  });
+
+  it('handles secrets without system_prompt (backwards compatibility)', async () => {
+    const client = new FixedDistributionClient(32);
+    const secret = generateSecret({
+      k: 16,
+      knock: [0, 1, 2, 3, 4, 5],
+      preambleTokens: 5,
+      suffixTokens: 5,
+    });
+
+    // Simulate old secret without system_prompt field
+    delete (secret as any).system_prompt;
+
+    const message = new TextEncoder().encode('Test backwards compat');
+    const prompt = 'Test: ';
+
+    const coverText = await encodeMessage(message, secret, client, prompt, true);
+    const decoded = await decodeMessage(coverText, secret, client, prompt);
+
+    expect(decoded).toEqual(message);
+  });
+
+  it('roundtrips secret with system_prompt through encrypt/decrypt', async () => {
+    const systemPrompt = 'System prompt for testing\n';
+    const secret = generateSecret({
+      k: 16,
+      knock: [1, 2, 3, 4, 5, 6],
+      systemPrompt,
+    });
+    const password = 'test123';
+
+    const encrypted = await encryptSecretBlob(secret, password);
+    const decrypted = await decryptSecretBlob(encrypted, password);
+
+    expect(decrypted.system_prompt).toBe(systemPrompt);
+  });
+});
+
 describe('TypeScript Roundtrip with FixedDistributionClient', () => {
   it('encodes and decodes correctly', async () => {
     const client = new FixedDistributionClient(32);

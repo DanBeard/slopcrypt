@@ -1,6 +1,8 @@
 import { defineConfig } from 'vite';
 
 export default defineConfig({
+  // Base path for GitHub Pages deployment (repo name)
+  base: '/slopcrypt/',
   server: {
     headers: {
       // Required for SharedArrayBuffer (wllama multi-threading)

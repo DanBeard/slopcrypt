@@ -29,7 +29,13 @@ export interface Secret {
   suffix_tokens: number;
   temperature: number;
   entropy_threshold?: number;
-  huffman_freq: Record<number, number>;
+  huffman_freq: Record<number, number> | null;
+  /**
+   * Hidden prompt prepended to context for LLM probability calculations
+   * but NOT included in output. Useful for instruction-style prompts
+   * that improve token distributions.
+   */
+  system_prompt?: string;
   notes: string;
 }
 

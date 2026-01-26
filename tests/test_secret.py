@@ -476,6 +476,97 @@ class TestEncodeDecodeWrappers:
         assert decoded == message
 
 
+class TestSystemPrompt:
+    """Tests for system_prompt feature."""
+
+    @pytest.fixture
+    def mock_client(self):
+        """Create mock LLM client."""
+        return MockLMClient(vocab_size=32)
+
+    def test_generate_secret_with_system_prompt(self):
+        """Generate secret should include system_prompt."""
+        system_prompt = "You are a weather bot. Write a weather report:\n\n"
+        secret = generate_secret(k=16, system_prompt=system_prompt)
+        assert secret["system_prompt"] == system_prompt
+
+    def test_generate_secret_without_system_prompt(self):
+        """Generate secret without system_prompt should default to empty string."""
+        secret = generate_secret(k=16)
+        assert secret.get("system_prompt", "") == ""
+
+    def test_encode_decode_with_system_prompt(self, mock_client):
+        """Encode/decode should work correctly with system_prompt."""
+        system_prompt = "You are a helpful assistant.\n\n"
+        secret = generate_secret(
+            k=16,
+            knock=[1, 5, 9, 13, 2, 6],
+            preamble_tokens=5,
+            suffix_tokens=5,
+            system_prompt=system_prompt,
+        )
+
+        message = b"Secret message with system prompt"
+        prompt = "Test: "
+
+        cover_text = encode_message(message, secret, mock_client, prompt=prompt)
+        decoded = decode_message(cover_text, secret, mock_client, prompt=prompt)
+
+        assert decoded == message
+
+    def test_cover_text_does_not_contain_system_prompt(self, mock_client):
+        """Cover text should not contain system_prompt."""
+        system_prompt = "HIDDEN SYSTEM PROMPT - THIS SHOULD NOT APPEAR"
+        secret = generate_secret(
+            k=16,
+            knock=[1, 5, 9, 13, 2, 6],
+            preamble_tokens=5,
+            suffix_tokens=5,
+            system_prompt=system_prompt,
+        )
+
+        message = b"Test"
+        prompt = "Visible prompt: "
+
+        cover_text = encode_message(message, secret, mock_client, prompt=prompt)
+
+        # Cover text should start with the user prompt, not system_prompt
+        assert cover_text.startswith(prompt)
+        assert system_prompt not in cover_text
+
+    def test_backwards_compatibility_no_system_prompt(self, mock_client):
+        """Old secrets without system_prompt should work (defaults to empty)."""
+        # Create secret without system_prompt field (simulating old format)
+        secret = generate_secret(k=16, knock=[1, 5, 9, 13, 2, 6])
+        # Remove the field to simulate old secret
+        if "system_prompt" in secret:
+            del secret["system_prompt"]
+
+        message = b"Test backwards compatibility"
+        prompt = "Test: "
+
+        cover_text = encode_message(message, secret, mock_client, prompt=prompt)
+        decoded = decode_message(cover_text, secret, mock_client, prompt=prompt)
+
+        assert decoded == message
+
+    def test_save_load_secret_with_system_prompt(self):
+        """Save and load should preserve system_prompt."""
+        system_prompt = "System prompt for testing\n"
+        secret = generate_secret(k=16, system_prompt=system_prompt)
+        password = "test123"
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".secret", delete=False) as f:
+            path = f.name
+
+        try:
+            save_secret(secret, password, path)
+            loaded = load_secret(path, password)
+            assert loaded["system_prompt"] == system_prompt
+        finally:
+            os.unlink(path)
+
+
 class TestIntegration:
     """Integration tests combining all components."""
 
@@ -553,6 +644,106 @@ class TestIntegration:
         # Decoding with wrong knock should fail to find knock sequence
         with pytest.raises(ValueError, match="[Kk]nock"):
             decode_message(cover_text, secret2, client, prompt=prompt)
+
+
+class TestSecretBlobCompression:
+    """Tests for secret blob compression (zlib + None huffman_freq)."""
+
+    def test_generate_secret_default_freq_is_none(self):
+        """Default huffman_freq should be stored as None to save space."""
+        secret = generate_secret(k=16)
+        assert secret["huffman_freq"] is None
+
+    def test_generate_secret_custom_freq_is_stored(self):
+        """Custom huffman_freq should be stored."""
+        secret = generate_secret(k=16, huffman_sample=b"custom sample text")
+        assert secret["huffman_freq"] is not None
+        assert isinstance(secret["huffman_freq"], dict)
+
+    def test_encrypt_decrypt_with_none_huffman_freq(self):
+        """Should roundtrip with None huffman_freq."""
+        secret = generate_secret(k=16)
+        password = "test123"
+
+        encrypted = encrypt_secret_blob(secret, password)
+        decrypted = decrypt_secret_blob(encrypted, password)
+
+        assert decrypted["huffman_freq"] is None
+        assert decrypted == secret
+
+    def test_encode_decode_with_none_huffman_freq(self):
+        """Encode/decode should work when huffman_freq is None."""
+        client = MockLMClient(vocab_size=32)
+        secret = generate_secret(k=16, knock=[1, 5, 9, 13, 2, 6])
+        assert secret["huffman_freq"] is None
+
+        message = b"Test message with None frequencies"
+        prompt = "Test: "
+
+        cover_text = encode_message(message, secret, client, prompt=prompt)
+        decoded = decode_message(cover_text, secret, client, prompt=prompt)
+
+        assert decoded == message
+
+    def test_zlib_compression_reduces_size(self):
+        """zlib compression should reduce secret blob size."""
+        # Create secret with custom frequencies (larger payload)
+        secret = generate_secret(k=16, huffman_sample=b"sample text " * 100)
+        password = "test123"
+
+        encrypted = encrypt_secret_blob(secret, password)
+
+        # With compression, blob should be reasonably sized
+        # The exact size depends on the frequency table
+        assert len(encrypted) < 1000  # Should be well under 1KB
+
+    def test_backwards_compatibility_uncompressed(self):
+        """Should decrypt old uncompressed secrets (msgpack starts with 0x80-0x8f)."""
+        import msgpack
+        import base64
+        from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+        from slopcrypt.secret import derive_key, SALT_SIZE, NONCE_SIZE
+
+        # Manually create an uncompressed secret blob (simulating old format)
+        secret = {
+            "version": 2,
+            "knock": [1, 2, 3],
+            "k": 16,
+            "payload_key": b"0" * 32,
+            "huffman_freq": DEFAULT_FREQUENCIES,  # Old format stored full dict
+        }
+        password = "test123"
+
+        # Create uncompressed blob manually
+        import secrets as secrets_module
+        salt = secrets_module.token_bytes(SALT_SIZE)
+        nonce = secrets_module.token_bytes(NONCE_SIZE)
+        key = derive_key(password, salt)
+
+        plaintext = msgpack.packb(secret, use_bin_type=True)
+        # Verify it starts with msgpack dict marker (0x80-0x8f)
+        assert 0x80 <= plaintext[0] <= 0x8f or plaintext[0] in (0xde, 0xdf)
+
+        aesgcm = AESGCM(key)
+        ciphertext = aesgcm.encrypt(nonce, plaintext, None)
+
+        blob = salt + nonce + ciphertext
+        blob_b64 = base64.b64encode(blob).decode("ascii")
+
+        # Should decrypt successfully
+        decrypted = decrypt_secret_blob(blob_b64, password)
+        assert decrypted == secret
+
+    def test_secret_blob_size_reduction(self):
+        """New secrets should be significantly smaller than old format."""
+        # Generate new secret with defaults (huffman_freq=None)
+        secret = generate_secret(k=16)
+        password = "test123"
+
+        encrypted = encrypt_secret_blob(secret, password)
+
+        # With None huffman_freq + zlib, should be ~300-400 chars instead of ~700+
+        assert len(encrypted) < 500, f"Secret blob too large: {len(encrypted)} chars"
 
 
 if __name__ == "__main__":

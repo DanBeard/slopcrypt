@@ -294,6 +294,7 @@ def encode_with_knock_arithmetic(
     suffix_tokens: int = 2,
     temperature: float = 0.8,
     entropy_threshold: float = 0.0,
+    system_prompt: str = "",
     verbose: bool = False,
 ) -> str:
     """
@@ -313,6 +314,11 @@ def encode_with_knock_arithmetic(
     3. Length header (4 bytes, uniform Base-K - for decoder sync)
     4. Payload (ARITHMETIC CODED - variable bits per token)
     5. Suffix tokens (sampled naturally)
+
+    Args:
+        system_prompt: Hidden prompt prepended to context for LLM probability
+                      calculations but NOT included in output. Useful for
+                      instruction-style prompts that improve token distributions.
     """
     bits_per_token = int(math.log2(k))
 
@@ -321,7 +327,8 @@ def encode_with_knock_arithmetic(
     length_bits = bytes_to_bits(length_header)
     payload_bits = bytes_to_bits(data)
 
-    context = prompt
+    # Context for LLM includes system_prompt, but output won't
+    context = system_prompt + prompt
     tokens = []
 
     # Phase 1: Generate preamble naturally (sampling) - unchanged
@@ -442,6 +449,7 @@ def decode_with_knock_arithmetic(
     knock: list[int],
     prompt: str = "",
     entropy_threshold: float = 0.0,
+    system_prompt: str = "",
     verbose: bool = False,
 ) -> bytes:
     """
@@ -451,15 +459,21 @@ def decode_with_knock_arithmetic(
 
     If entropy_threshold > 0 and the top token's probability exceeds it,
     we assume 0 bits were encoded at that position (encoder skipped it).
+
+    Args:
+        system_prompt: Hidden prompt that was prepended to context during encoding.
+                      Must match exactly for correct probability calculations.
+                      Note: system_prompt is NOT in the cover_text.
     """
     bits_per_token = int(math.log2(k))
 
-    # Strip prompt if present
+    # Strip user prompt from cover_text (system_prompt is NOT in cover_text)
+    # Context for LLM includes system_prompt for correct probability calculations
     if prompt and cover_text.startswith(prompt):
-        context = prompt
+        context = system_prompt + prompt
         remaining = cover_text[len(prompt):]
     else:
-        context = ""
+        context = system_prompt
         remaining = cover_text
 
     # Phase 1: Scan all tokens and collect indices (same as uniform decode)

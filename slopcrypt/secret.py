@@ -24,6 +24,7 @@ import getpass
 import math
 import secrets
 import sys
+import zlib
 
 import msgpack
 from cryptography.hazmat.primitives import hashes
@@ -74,12 +75,19 @@ def encrypt_secret_blob(secret: dict, password: str) -> str:
     Encrypt secret dict and return base64-encoded blob.
 
     Format: base64([salt:16][nonce:12][ciphertext+tag])
+
+    The plaintext is optionally zlib-compressed if it reduces size.
     """
     salt = secrets.token_bytes(SALT_SIZE)
     nonce = secrets.token_bytes(NONCE_SIZE)
     key = derive_key(password, salt)
 
     plaintext = msgpack.packb(secret, use_bin_type=True)
+
+    # Try zlib compression, use if smaller
+    compressed = zlib.compress(plaintext, level=9)
+    if len(compressed) < len(plaintext):
+        plaintext = compressed
 
     aesgcm = AESGCM(key)
     ciphertext = aesgcm.encrypt(nonce, plaintext, None)
@@ -91,6 +99,8 @@ def encrypt_secret_blob(secret: dict, password: str) -> str:
 def decrypt_secret_blob(blob_b64: str, password: str) -> dict:
     """
     Decrypt base64-encoded secret blob.
+
+    Auto-detects zlib compression: zlib starts with 0x78, msgpack dicts start with 0x80-0x8f.
 
     Raises:
         ValueError: If decryption fails (wrong password or corrupted)
@@ -114,6 +124,13 @@ def decrypt_secret_blob(blob_b64: str, password: str) -> dict:
         plaintext = aesgcm.decrypt(nonce, ciphertext, None)
     except Exception as e:
         raise ValueError("Decryption failed - wrong password or corrupted data") from e
+
+    # Auto-detect zlib compression: zlib starts with 0x78, msgpack dicts start with 0x80-0x8f
+    if plaintext and plaintext[0] == 0x78:
+        try:
+            plaintext = zlib.decompress(plaintext)
+        except zlib.error:
+            pass  # Not actually zlib, use as-is
 
     return msgpack.unpackb(plaintext, raw=False, strict_map_key=False)
 
@@ -200,6 +217,7 @@ def generate_secret(
     temperature: float = 0.8,
     entropy_threshold: float = 0.0,
     huffman_sample: bytes | None = None,
+    system_prompt: str = "",
     notes: str = "",
 ) -> dict:
     """
@@ -213,6 +231,9 @@ def generate_secret(
         temperature: Sampling temperature for preamble/suffix
         entropy_threshold: If top token prob > this, skip encoding (0.0 = disabled)
         huffman_sample: Sample text to build frequency table (optional)
+        system_prompt: Hidden prompt prepended to context for LLM probability
+                      calculations but NOT included in output. Useful for
+                      instruction-style prompts that improve token distributions.
         notes: Optional metadata
 
     Returns:
@@ -221,11 +242,11 @@ def generate_secret(
     if knock is None:
         knock = generate_random_knock(k, length=6)
 
-    # Build Huffman frequency table
+    # Build Huffman frequency table (None means use defaults)
     if huffman_sample:
         huffman_freq = build_frequency_table(huffman_sample)
     else:
-        huffman_freq = DEFAULT_FREQUENCIES.copy()
+        huffman_freq = None  # Store None to use defaults, saves ~230 bytes
 
     # Generate random payload encryption key
     payload_key = secrets.token_bytes(PAYLOAD_KEY_SIZE)
@@ -240,6 +261,7 @@ def generate_secret(
         "temperature": temperature,
         "entropy_threshold": entropy_threshold,
         "huffman_freq": huffman_freq,
+        "system_prompt": system_prompt,
         "notes": notes,
     }
 
@@ -297,7 +319,7 @@ def encode_message(
     if prompt is None:
         prompt = DEFAULT_PROMPT
 
-    frequencies = secret.get("huffman_freq", DEFAULT_FREQUENCIES)
+    frequencies = secret.get("huffman_freq") or DEFAULT_FREQUENCIES
 
     # Step 1: Compress if enabled
     if compress:
@@ -338,6 +360,7 @@ def encode_message(
         suffix_tokens=secret.get("suffix_tokens", 2),
         temperature=secret.get("temperature", 0.8),
         entropy_threshold=secret.get("entropy_threshold", 0.0),
+        system_prompt=secret.get("system_prompt", ""),
         verbose=verbose,
     )
 
@@ -374,6 +397,7 @@ def decode_message(
         knock=secret["knock"],
         prompt=prompt or "",
         entropy_threshold=secret.get("entropy_threshold", 0.0),
+        system_prompt=secret.get("system_prompt", ""),
         verbose=verbose,
     )
 
@@ -400,7 +424,7 @@ def decode_message(
     if verbose:
         print(f"Compression type: {comp_type}", file=sys.stderr)
 
-    frequencies = secret.get("huffman_freq", DEFAULT_FREQUENCIES)
+    frequencies = secret.get("huffman_freq") or DEFAULT_FREQUENCIES
     message = decompress_payload(compressed, comp_type, frequencies)
 
     if verbose and comp_type == COMPRESSION_HUFFMAN:
@@ -484,6 +508,7 @@ def cmd_generate_secret(args):
         temperature=args.temperature,
         entropy_threshold=args.entropy_threshold,
         huffman_sample=huffman_sample,
+        system_prompt=args.system_prompt or "",
         notes=args.notes or "",
     )
 
@@ -601,8 +626,19 @@ def cmd_show_secret(args):
     print(f"Temperature: {secret.get('temperature', 0.8)}")
     print(f"Entropy threshold: {secret.get('entropy_threshold', 0.0)}")
 
-    huffman_freq = secret.get("huffman_freq", {})
-    print(f"Huffman frequencies: {len(huffman_freq)} entries")
+    huffman_freq = secret.get("huffman_freq")
+    if huffman_freq is None:
+        print("Huffman frequencies: using defaults")
+    else:
+        print(f"Huffman frequencies: {len(huffman_freq)} entries")
+
+    system_prompt = secret.get("system_prompt", "")
+    if system_prompt:
+        # Show truncated version for readability
+        display = system_prompt[:50] + "..." if len(system_prompt) > 50 else system_prompt
+        print(f"System prompt: {repr(display)}")
+    else:
+        print("System prompt: (none)")
 
     if secret.get("notes"):
         print(f"Notes: {secret['notes']}")
@@ -657,6 +693,10 @@ Examples:
         help="Skip encoding if top token prob > threshold (0.0 = disabled, try 0.9 for more natural text)",
     )
     gen_parser.add_argument("--huffman-sample", help="Sample file for Huffman frequencies")
+    gen_parser.add_argument(
+        "--system-prompt",
+        help="Hidden prompt prepended to context for LLM (improves token distributions, not included in output)",
+    )
     gen_parser.add_argument("--notes", help="Optional notes/metadata")
     gen_parser.add_argument("--password", help="Password (prompted if not provided)")
 

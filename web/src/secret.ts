@@ -4,6 +4,7 @@
  */
 
 import { encode as msgpackEncode, decode as msgpackDecode } from '@msgpack/msgpack';
+import pako from 'pako';
 import {
   type Secret,
   SALT_SIZE,
@@ -20,7 +21,6 @@ import {
   bytesToBase64,
   base64ToBytes,
 } from './crypto.ts';
-import { DEFAULT_FREQUENCIES } from './huffman.ts';
 
 /**
  * Validate secret dict has required fields and valid values.
@@ -63,6 +63,8 @@ export function validateSecret(secret: Secret): void {
 /**
  * Encrypt secret dict and return base64-encoded blob.
  * Format: base64([salt:16][nonce:12][ciphertext+tag])
+ *
+ * The plaintext is optionally zlib-compressed if it reduces size.
  */
 export async function encryptSecretBlob(
   secret: Secret,
@@ -72,10 +74,16 @@ export async function encryptSecretBlob(
   const key = await deriveKey(password, salt);
 
   // msgpack encode the secret
-  const plaintext = msgpackEncode(secret);
+  let plaintext = new Uint8Array(msgpackEncode(secret));
+
+  // Try zlib compression, use if smaller
+  const compressed = pako.deflate(plaintext, { level: 9 });
+  if (compressed.length < plaintext.length) {
+    plaintext = compressed;
+  }
 
   // Encrypt with AES-GCM (returns nonce + ciphertext)
-  const encrypted = await encryptAesGcm(new Uint8Array(plaintext), key);
+  const encrypted = await encryptAesGcm(plaintext, key);
 
   // Combine: salt + encrypted (which includes nonce)
   const blob = new Uint8Array(salt.length + encrypted.length);
@@ -87,6 +95,8 @@ export async function encryptSecretBlob(
 
 /**
  * Decrypt base64-encoded secret blob.
+ *
+ * Auto-detects zlib compression: zlib starts with 0x78, msgpack dicts start with 0x80-0x8f.
  */
 export async function decryptSecretBlob(
   blobB64: string,
@@ -107,7 +117,16 @@ export async function decryptSecretBlob(
   const encrypted = blob.slice(SALT_SIZE);
 
   const key = await deriveKey(password, salt);
-  const plaintext = await decryptAesGcm(encrypted, key);
+  let plaintext = await decryptAesGcm(encrypted, key);
+
+  // Auto-detect zlib compression: zlib starts with 0x78, msgpack dicts start with 0x80-0x8f
+  if (plaintext.length > 0 && plaintext[0] === 0x78) {
+    try {
+      plaintext = pako.inflate(plaintext);
+    } catch {
+      // Not actually zlib, use as-is
+    }
+  }
 
   const secret = msgpackDecode(plaintext) as Secret;
 
@@ -131,6 +150,7 @@ export function generateSecret(options: {
   temperature?: number;
   entropyThreshold?: number;
   huffmanSample?: Uint8Array;
+  systemPrompt?: string;
   notes?: string;
 }): Secret {
   const {
@@ -140,6 +160,7 @@ export function generateSecret(options: {
     suffixTokens = 2,
     temperature = 0.8,
     entropyThreshold = 0.0,
+    systemPrompt = '',
     notes = '',
   } = options;
 
@@ -148,12 +169,12 @@ export function generateSecret(options: {
     throw new Error(`K must be a power of 2 >= 2, got ${k}`);
   }
 
-  // Build Huffman frequency table
-  let huffmanFreq: Record<number, number>;
+  // Build Huffman frequency table (null means use defaults)
+  let huffmanFreq: Record<number, number> | null;
   if (options.huffmanSample) {
     huffmanFreq = buildFrequencyTableFromSample(options.huffmanSample);
   } else {
-    huffmanFreq = { ...DEFAULT_FREQUENCIES };
+    huffmanFreq = null; // Store null to use defaults, saves ~230 bytes
   }
 
   // Generate random payload encryption key
@@ -169,6 +190,7 @@ export function generateSecret(options: {
     temperature,
     entropy_threshold: entropyThreshold,
     huffman_freq: huffmanFreq,
+    system_prompt: systemPrompt,
     notes,
   };
 

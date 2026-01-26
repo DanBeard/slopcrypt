@@ -358,7 +358,8 @@ function updateSecretInfo(): void {
     <div><dt>Suffix tokens:</dt><dd>${currentSecret.suffix_tokens}</dd></div>
     <div><dt>Temperature:</dt><dd>${currentSecret.temperature}</dd></div>
     <div><dt>Entropy threshold:</dt><dd>${currentSecret.entropy_threshold ?? 0}</dd></div>
-    <div><dt>Huffman entries:</dt><dd>${Object.keys(currentSecret.huffman_freq).length}</dd></div>
+    <div><dt>Huffman entries:</dt><dd>${currentSecret.huffman_freq ? Object.keys(currentSecret.huffman_freq).length : 'default'}</dd></div>
+    ${currentSecret.system_prompt ? `<div><dt>System prompt:</dt><dd>${currentSecret.system_prompt.slice(0, 50)}${currentSecret.system_prompt.length > 50 ? '...' : ''}</dd></div>` : ''}
     ${currentSecret.notes ? `<div><dt>Notes:</dt><dd>${currentSecret.notes}</dd></div>` : ''}
   `;
 }
