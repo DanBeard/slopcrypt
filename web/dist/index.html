@@ -1,0 +1,855 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SlopCrypt Web</title>
+  <!-- coi-serviceworker: enables SharedArrayBuffer on GitHub Pages by emulating COOP/COEP headers -->
+  <script src="coi-serviceworker.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=VT323&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0a0a0f;
+      --surface: #12121a;
+      --primary: #ff2a6d;
+      --secondary: #05d9e8;
+      --accent: #d1f7ff;
+      --warning: #f9c846;
+      --terminal: #39ff14;
+      --text: #e0e0e0;
+      --text-muted: #666;
+      --border: #333;
+      --success: #4ade80;
+      --error: #f87171;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      line-height: 1.6;
+    }
+
+    .container {
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 2rem;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 2rem;
+    }
+
+    .ascii-art {
+      font-family: 'VT323', monospace;
+      color: var(--terminal);
+      font-size: 0.65rem;
+      line-height: 1.1;
+      white-space: pre;
+      text-shadow: 0 0 10px var(--terminal);
+      margin-bottom: 0.5rem;
+      overflow-x: auto;
+    }
+
+    @media (min-width: 600px) {
+      .ascii-art {
+        font-size: 0.85rem;
+      }
+    }
+
+    h1 {
+      font-family: 'VT323', monospace;
+      font-size: 2rem;
+      color: var(--primary);
+      margin-bottom: 0.5rem;
+      text-shadow: 0 0 10px var(--primary);
+    }
+
+    h2 {
+      font-family: 'VT323', monospace;
+    }
+
+    .tagline {
+      color: var(--text-muted);
+      font-size: 0.9rem;
+      font-style: italic;
+    }
+
+    .tabs {
+      display: flex;
+      gap: 0.5rem;
+      margin-bottom: 1.5rem;
+      border-bottom: 2px solid var(--border);
+      padding-bottom: 0.5rem;
+      flex-wrap: wrap;
+    }
+
+    .tab {
+      padding: 0.5rem 1rem;
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      font-family: 'VT323', monospace;
+      font-size: 1.2rem;
+      transition: all 0.2s;
+    }
+
+    .tab:hover {
+      color: var(--text);
+    }
+
+    .tab.active {
+      color: var(--primary);
+      border-bottom: 2px solid var(--primary);
+      margin-bottom: -2px;
+    }
+
+    .panel {
+      display: none;
+    }
+
+    .panel.active {
+      display: block;
+    }
+
+    .card {
+      background: var(--surface);
+      border-radius: 8px;
+      padding: 1.5rem;
+      margin-bottom: 1.5rem;
+      border: 1px solid var(--border);
+    }
+
+    .card h2 {
+      font-size: 1.4rem;
+      margin-bottom: 1rem;
+      color: var(--primary);
+      text-shadow: 0 0 10px var(--primary);
+    }
+
+    .card.callout {
+      border: 2px dashed var(--secondary);
+      background: rgba(5, 217, 232, 0.05);
+    }
+
+    .card.callout h3 {
+      font-family: 'VT323', monospace;
+      font-size: 1.3rem;
+      color: var(--secondary);
+      margin-bottom: 0.5rem;
+    }
+
+    .card.callout.warning {
+      border-color: var(--warning);
+      background: rgba(249, 200, 70, 0.05);
+    }
+
+    .card.callout.warning h3 {
+      color: var(--warning);
+    }
+
+    .card.callout.success {
+      border-color: var(--success);
+      background: rgba(74, 222, 128, 0.05);
+      animation: pulse-border 2s ease-in-out infinite;
+    }
+
+    .card.callout.success h3 {
+      color: var(--success);
+    }
+
+    @keyframes pulse-border {
+      0%, 100% { border-color: var(--success); }
+      50% { border-color: rgba(74, 222, 128, 0.5); }
+    }
+
+    .quick-start {
+      margin-bottom: 1.5rem;
+    }
+
+    .quick-start .row {
+      align-items: flex-end;
+    }
+
+    .form-group {
+      margin-bottom: 1rem;
+    }
+
+    label {
+      display: block;
+      margin-bottom: 0.3rem;
+      color: var(--text-muted);
+      font-size: 0.85rem;
+    }
+
+    input, textarea, select {
+      width: 100%;
+      padding: 0.6rem;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      color: var(--text);
+      font-family: inherit;
+      font-size: 0.9rem;
+    }
+
+    input:focus, textarea:focus, select:focus {
+      outline: none;
+      border-color: var(--primary);
+    }
+
+    textarea {
+      min-height: 100px;
+      resize: vertical;
+    }
+
+    .checkbox-group {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .checkbox-group input {
+      width: auto;
+    }
+
+    button {
+      padding: 0.7rem 1.5rem;
+      background: var(--primary);
+      border: none;
+      border-radius: 4px;
+      color: white;
+      font-family: 'VT323', monospace;
+      font-size: 1.1rem;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    button:hover {
+      opacity: 0.9;
+      box-shadow: 0 0 10px var(--primary);
+    }
+
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      box-shadow: none;
+    }
+
+    button.secondary {
+      background: var(--secondary);
+    }
+
+    button.secondary:hover {
+      box-shadow: 0 0 10px var(--secondary);
+    }
+
+    .button-row {
+      display: flex;
+      gap: 0.5rem;
+      margin-top: 1rem;
+      flex-wrap: wrap;
+    }
+
+    .progress {
+      background: var(--bg);
+      border-radius: 4px;
+      height: 8px;
+      overflow: hidden;
+      margin: 1rem 0;
+    }
+
+    .progress-bar {
+      height: 100%;
+      background: linear-gradient(90deg, var(--primary), var(--secondary));
+      width: 0%;
+      transition: width 0.3s;
+    }
+
+    .status {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      margin-top: 0.5rem;
+    }
+
+    .status.success {
+      color: var(--success);
+    }
+
+    .status.error {
+      color: var(--error);
+    }
+
+    .output {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 1rem;
+      max-height: 300px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      word-break: break-all;
+      font-size: 0.85rem;
+    }
+
+    .secret-info {
+      background: var(--bg);
+      border-radius: 4px;
+      padding: 1rem;
+      font-size: 0.85rem;
+    }
+
+    .secret-info dt {
+      color: var(--text-muted);
+      display: inline;
+    }
+
+    .secret-info dd {
+      display: inline;
+      margin-left: 0.5rem;
+    }
+
+    .secret-info div {
+      margin-bottom: 0.3rem;
+    }
+
+    .model-status {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      margin-bottom: 1rem;
+      padding: 0.5rem;
+      background: var(--surface);
+      border-radius: 4px;
+      border: 1px solid var(--border);
+    }
+
+    .model-status .indicator {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--text-muted);
+    }
+
+    .model-status.loaded .indicator {
+      background: var(--success);
+      box-shadow: 0 0 8px var(--success);
+    }
+
+    .model-status.loading .indicator {
+      background: var(--primary);
+      animation: pulse 1s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+
+    .hint {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      margin-top: 0.3rem;
+    }
+
+    .row {
+      display: flex;
+      gap: 1rem;
+    }
+
+    .row > * {
+      flex: 1;
+    }
+
+    @media (max-width: 600px) {
+      .row {
+        flex-direction: column;
+      }
+    }
+
+    /* About tab styles */
+    .about-content {
+      font-size: 0.95rem;
+      line-height: 1.7;
+    }
+
+    .about-content h3 {
+      font-family: 'VT323', monospace;
+      font-size: 1.4rem;
+      color: var(--secondary);
+      margin-top: 1.5rem;
+      margin-bottom: 0.5rem;
+      text-shadow: 0 0 8px var(--secondary);
+    }
+
+    .about-content h3:first-child {
+      margin-top: 0;
+    }
+
+    .about-content p {
+      margin-bottom: 1rem;
+    }
+
+    .about-content .highlight {
+      color: var(--primary);
+      font-weight: bold;
+    }
+
+    .diagram {
+      font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', monospace;
+      font-size: 0.75rem;
+      color: var(--accent);
+      background: var(--bg);
+      padding: 1rem;
+      border-radius: 4px;
+      overflow-x: auto;
+      white-space: pre;
+      margin: 1rem 0;
+      line-height: 1.3;
+    }
+
+    .security-list {
+      list-style: none;
+      padding: 0;
+    }
+
+    .security-list li {
+      padding: 0.3rem 0;
+      padding-left: 1.5rem;
+      position: relative;
+    }
+
+    .security-list li::before {
+      content: "✓";
+      position: absolute;
+      left: 0;
+      color: var(--success);
+    }
+
+    /* Footer */
+    footer {
+      text-align: center;
+      padding: 2rem;
+      margin-top: 2rem;
+      border-top: 1px solid var(--border);
+      color: var(--text-muted);
+      font-size: 0.8rem;
+    }
+
+    footer .joke {
+      font-style: italic;
+      margin-bottom: 0.5rem;
+    }
+
+    footer a {
+      color: var(--secondary);
+      text-decoration: none;
+    }
+
+    footer a:hover {
+      text-decoration: underline;
+    }
+
+    /* Secret blob display */
+    .secret-blob-display {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 0.75rem;
+      font-size: 0.75rem;
+      word-break: break-all;
+      max-height: 100px;
+      overflow-y: auto;
+      margin: 0.5rem 0;
+    }
+
+    /* Hidden by default */
+    .hidden {
+      display: none !important;
+    }
+
+    /* Collapsible sections */
+    .collapsible-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      cursor: pointer;
+      padding: 0.5rem 0;
+    }
+
+    .collapsible-header::after {
+      content: "▼";
+      font-size: 0.8rem;
+      transition: transform 0.2s;
+    }
+
+    .collapsible-header.collapsed::after {
+      transform: rotate(-90deg);
+    }
+
+    .collapsible-content {
+      overflow: hidden;
+      transition: max-height 0.3s ease-out;
+    }
+
+    .collapsible-content.collapsed {
+      max-height: 0;
+    }
+  </style>
+  <script type="module" crossorigin src="/assets/index-DiftxJsF.js"></script>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="ascii-art" aria-hidden="true">
+   _____ _                _____                  _
+  / ____| |              / ____|                | |
+ | (___ | | ___  _ __   | |     _ __ _   _ _ __ | |_
+  \___ \| |/ _ \| '_ \  | |    | '__| | | | '_ \| __|
+  ____) | | (_) | |_) | | |____| |  | |_| | |_) | |_
+ |_____/|_|\___/| .__/   \_____|_|   \__, | .__/ \__|
+                | |                   __/ | |
+                |_|                  |___/|_|   [WEB]</div>
+      <p class="tagline" id="tagline">Hide your secrets in the slop</p>
+    </header>
+
+    <div class="tabs">
+      <button class="tab active" data-tab="encode">Encode</button>
+      <button class="tab" data-tab="decode">Decode</button>
+      <button class="tab" data-tab="secret">Secrets</button>
+      <button class="tab" data-tab="about">About</button>
+    </div>
+
+    <!-- Model Status -->
+    <div class="model-status" id="modelStatus">
+      <div class="indicator"></div>
+      <span id="modelStatusText">Slop machine offline</span>
+      <select id="modelSelect" style="margin-left: auto; width: auto; padding: 0.4rem 0.6rem;"></select>
+      <button id="loadModelBtn" class="secondary">Load Model</button>
+    </div>
+
+    <!-- Encode Panel -->
+    <div class="panel active" id="encodePanel">
+      <!-- Quick Start Secret Generation -->
+      <div class="quick-start" id="encodeQuickStart">
+        <div class="card callout">
+          <h3>🚀 Quick Start</h3>
+          <p style="margin-bottom: 1rem; color: var(--text-muted);">Need a secret? Generate one here, or load an existing one.</p>
+          <div class="row">
+            <div class="form-group" style="margin-bottom: 0;">
+              <label for="quickPassword">Password</label>
+              <input type="password" id="quickPassword" placeholder="hunter2">
+            </div>
+            <div class="form-group" style="margin-bottom: 0;">
+              <label>&nbsp;</label>
+              <button id="quickGenerateBtn">Generate Secret</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Generated Secret Display (hidden by default) -->
+        <div class="card callout success hidden" id="quickSecretSuccess">
+          <h3>🔐 SECRET GENERATED</h3>
+          <p style="margin-bottom: 0.5rem;">Your recipient needs this blob + password to decode messages. Send it via a secure channel (Signal, encrypted email, carrier pigeon, etc.)</p>
+          <div class="secret-blob-display" id="quickSecretBlob"></div>
+          <div class="button-row" style="margin-top: 0.5rem;">
+            <button id="quickCopyBlob" class="secondary">Copy Secret Blob</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Encode Message</h2>
+
+        <div class="form-group">
+          <label for="encodeMessage">Message to hide</label>
+          <textarea id="encodeMessage" placeholder="The bird has left the nest..."></textarea>
+        </div>
+
+        <div class="form-group">
+          <label for="encodePrompt">Prompt (start of cover text)</label>
+          <textarea id="encodePrompt" rows="2" placeholder="Write me an essay about...">Write a short story about a traveler:
+
+The weary traveler had been walking for</textarea>
+        </div>
+
+        <div class="checkbox-group">
+          <input type="checkbox" id="encodeMock">
+          <label for="encodeMock">Use mock client (no model needed, for testing)</label>
+        </div>
+
+        <div class="button-row">
+          <button id="encodeBtn">Encode</button>
+          <button id="copyEncoded" class="secondary" disabled>Copy to Clipboard</button>
+        </div>
+
+        <div class="progress" id="encodeProgress" style="display: none;">
+          <div class="progress-bar" id="encodeProgressBar"></div>
+        </div>
+        <div class="status" id="encodeStatus"></div>
+
+        <div class="form-group" style="margin-top: 1rem;">
+          <label>Cover Text Output</label>
+          <div class="output" id="encodeOutput"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Decode Panel -->
+    <div class="panel" id="decodePanel">
+      <!-- Quick Start Secret Loading -->
+      <div class="quick-start" id="decodeQuickStart">
+        <div class="card callout">
+          <h3>🔓 Load Secret</h3>
+          <p style="margin-bottom: 1rem; color: var(--text-muted);">Paste the secret blob you received + enter the password.</p>
+          <div class="form-group">
+            <label for="quickLoadBlob">Secret Blob</label>
+            <textarea id="quickLoadBlob" rows="2" placeholder="Paste secret blob here..."></textarea>
+          </div>
+          <div class="row">
+            <div class="form-group" style="margin-bottom: 0;">
+              <label for="quickLoadPassword">Password</label>
+              <input type="password" id="quickLoadPassword" placeholder="hunter2">
+            </div>
+            <div class="form-group" style="margin-bottom: 0;">
+              <label>&nbsp;</label>
+              <button id="quickLoadBtn">Load Secret</button>
+            </div>
+          </div>
+          <div class="status" id="quickLoadStatus"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Decode Message</h2>
+
+        <div class="form-group">
+          <label for="decodeCover">Cover text to decode</label>
+          <textarea id="decodeCover" placeholder="Paste the slop here..."></textarea>
+        </div>
+
+        <div class="checkbox-group">
+          <input type="checkbox" id="decodeMock">
+          <label for="decodeMock">Use mock client (no model needed, for testing)</label>
+        </div>
+
+        <div class="button-row">
+          <button id="decodeBtn">Decode</button>
+        </div>
+
+        <div class="progress" id="decodeProgress" style="display: none;">
+          <div class="progress-bar" id="decodeProgressBar"></div>
+        </div>
+        <div class="status" id="decodeStatus"></div>
+
+        <div class="form-group" style="margin-top: 1rem;">
+          <label>Decoded Message</label>
+          <div class="output" id="decodeOutput"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Secret Panel -->
+    <div class="panel" id="secretPanel">
+      <div class="card">
+        <h2>Generate New Secret</h2>
+
+        <div class="row">
+          <div class="form-group">
+            <label for="secretK">K (tokens per step)</label>
+            <select id="secretK">
+              <option value="4">4 (2 bits/token)</option>
+              <option value="8" selected>8 (3 bits/token, recommended)</option>
+              <option value="16">16 (4 bits/token)</option>
+              <option value="32">32 (5 bits/token)</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="secretPreamble">Preamble tokens</label>
+            <input type="number" id="secretPreamble" value="4" min="0" max="100">
+          </div>
+          <div class="form-group">
+            <label for="secretSuffix">Suffix tokens</label>
+            <input type="number" id="secretSuffix" value="2" min="0" max="100">
+          </div>
+        </div>
+
+        <div class="row">
+          <div class="form-group">
+            <label for="secretEntropyThreshold">Entropy threshold</label>
+            <input type="number" id="secretEntropyThreshold" value="0.9" min="0" max="1" step="0.05">
+            <div class="hint">Skip encoding when top token prob > threshold (0 = disabled, 0.9 = natural text)</div>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="secretPassword">Password</label>
+          <input type="password" id="secretPassword" placeholder="hunter2">
+          <div class="hint">Used to encrypt the secret blob</div>
+        </div>
+
+        <div class="form-group">
+          <label for="secretNotes">Notes (optional)</label>
+          <input type="text" id="secretNotes" placeholder="e.g., 'For project X'">
+        </div>
+
+        <div class="button-row">
+          <button id="generateSecretBtn">Generate Secret</button>
+        </div>
+
+        <div class="status" id="secretStatus"></div>
+      </div>
+
+      <div class="card">
+        <h2>Load Existing Secret</h2>
+
+        <div class="form-group">
+          <label for="secretBlob">Secret blob (base64)</label>
+          <textarea id="secretBlob" placeholder="Paste secret blob here..."></textarea>
+        </div>
+
+        <div class="form-group">
+          <label for="loadPassword">Password</label>
+          <input type="password" id="loadPassword" placeholder="hunter2">
+        </div>
+
+        <div class="button-row">
+          <button id="loadSecretBtn">Load Secret</button>
+          <button id="exportSecretBtn" class="secondary" disabled>Export Secret</button>
+        </div>
+
+        <div class="status" id="loadStatus"></div>
+      </div>
+
+      <div class="card" id="secretInfoCard" style="display: none;">
+        <h2>Current Secret</h2>
+        <div class="secret-info" id="secretInfo"></div>
+      </div>
+    </div>
+
+    <!-- About Panel -->
+    <div class="panel" id="aboutPanel">
+      <div class="card">
+        <div class="about-content">
+          <h3>What is SlopCrypt?</h3>
+          <p>
+            You know how AI generates endless streams of generic text?
+            Blog posts, emails, essays about nothing? That's <span class="highlight">slop</span>.
+          </p>
+          <p>
+            <strong>We weaponized it.</strong>
+          </p>
+          <p>
+            SlopCrypt hides your secret messages inside AI-generated text.
+            The cover text looks like normal LLM output, but each word
+            encodes a few bits of your encrypted payload.
+          </p>
+
+          <h3>How It Works</h3>
+          <div class="diagram">┌─────────────┐    ┌─────────────┐    ┌─────────────┐
+│ Your Secret │ →  │  Compress   │ →  │   Encrypt   │
+│   Message   │    │  (Arith.)   │    │ (AES-256)   │
+└─────────────┘    └─────────────┘    └─────────────┘
+                                             │
+                                             ▼
+┌─────────────┐    ┌─────────────┐    ┌─────────────┐
+│ Cover Text  │ ←  │  LLM Picks  │ ←  │  Bits Guide │
+│   (Slop)    │    │   Tokens    │    │   Choices   │
+└─────────────┘    └─────────────┘    └─────────────┘</div>
+          <p>
+            Using arithmetic coding, each token encodes a variable number of
+            bits based on the model's probability distribution. Higher entropy
+            contexts encode more bits; low entropy tokens (where the model is
+            very confident) can be skipped entirely for more natural text.
+          </p>
+
+          <h3>Is It Secure?</h3>
+          <p>Your message is protected by multiple layers:</p>
+          <ul class="security-list">
+            <li>Compressed (arithmetic coding)</li>
+            <li>Encrypted (AES-256-GCM)</li>
+            <li>Hidden (steganography)</li>
+          </ul>
+          <p>
+            Even if someone suspects the text contains a message,
+            they can't extract it without your secret + password.
+          </p>
+          <p style="color: var(--text-muted); font-style: italic;">
+            Frequency analysis? Never heard of her.
+          </p>
+
+          <div class="card callout warning" style="margin: 1rem 0;">
+            <h3>⚠️ No Third-Party Review</h3>
+            <p style="margin-bottom: 0;">
+              This is an experimental project that <strong>has not been audited</strong> by security professionals.
+              The cryptographic primitives (AES-256-GCM, PBKDF2) are standard, but the overall system
+              design hasn't been vetted. Don't rely on this if your life or liberty depends on it.
+            </p>
+          </div>
+
+          <h3>100% Local</h3>
+          <p>
+            <strong>Everything runs in your browser.</strong> The LLM runs locally via WebAssembly—your
+            messages, secrets, and cover text never leave your device. No servers, no tracking, no trust required.
+          </p>
+          <p>
+            The model (~150MB) is downloaded once and cached in your browser.
+            After that, it's all local, all the time.
+          </p>
+
+          <h3>FAQ</h3>
+          <p><strong>Q: Do I need to load a model?</strong><br>
+          A: Yes! Select a model from the dropdown and click "Load Model". Both sender and receiver must use the same model. There's also a mock client for testing the UI.</p>
+
+          <p><strong>Q: Which model should I use?</strong><br>
+          A: It depends on your priorities:<br>
+          • <span class="highlight">SmolLM2-135M</span> (~150MB) — Fastest, but output looks more "sloppy"<br>
+          • <span class="highlight">SmolLM2-360M</span> (~380MB) — Better quality, still quick<br>
+          • <span class="highlight">Qwen2.5-0.5B</span> (~530MB) — Good balance of quality and speed<br>
+          • <span class="highlight">SmolLM2-1.7B</span> (~1.8GB) — Best quality, but slower and uses more RAM<br>
+          Larger models produce more natural-sounding text. Smaller K values (like K=4) also improve quality but reduce encoding density.</p>
+
+          <p><strong>Q: How do I share the secret with someone?</strong><br>
+          A: Generate a secret, copy the blob, and send it + the password through a secure channel (Signal, encrypted email, etc.). They'll paste it in to decode your messages.</p>
+
+          <p><strong>Q: Why "slop"?</strong><br>
+          A: It's internet slang for low-quality AI-generated content. We're reclaiming it for good (or at least for fun).</p>
+
+          <p><strong>Q: Has this been security audited?</strong><br>
+          A: No. This is an experimental project that hasn't been reviewed by security professionals. Don't rely on it if your life or liberty depends on it. The cryptographic primitives (AES-256-GCM, PBKDF2) are standard, but the overall system hasn't been vetted.</p>
+
+          <p><strong>Q: Who made this?</strong><br>
+          A: This was <em>vibecoded</em>—a human mass-produced tokens with Claude until something useful fell out. The LLM stared into the abyss of token probabilities, and the abyss stared back. We're just being honest about our slop-making process.</p>
+
+          <h3>Further Reading</h3>
+          <p>Academic papers and implementations we learned from:</p>
+          <ul style="list-style: disc; padding-left: 1.5rem; margin-bottom: 1rem;">
+            <li><a href="https://arxiv.org/abs/2503.19499" target="_blank" style="color: var(--secondary);">SparSamp</a> (USENIX SEC 2025) — Sparse sampling for provably undetectable steganography</li>
+            <li><a href="https://arxiv.org/abs/2501.00786" target="_blank" style="color: var(--secondary);">ShiMer</a> (2025) — Efficient LLM steganography via shielding and merging</li>
+            <li><a href="https://ieeexplore.ieee.org/document/10179430" target="_blank" style="color: var(--secondary);">Discop</a> (IEEE S&amp;P 2023) — Distribution-copy based steganography</li>
+            <li><a href="https://eprint.iacr.org/2021/686.pdf" target="_blank" style="color: var(--secondary);">Meteor</a> (2021) — Cryptographically secure steganography for realistic distributions</li>
+            <li><a href="https://github.com/shawnz/textcoder" target="_blank" style="color: var(--secondary);">textcoder</a> — Reference implementation that inspired this project</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    <div class="joke">Made with mass token probability manipulation</div>
+    <div>Vibecoded with Claude</div>
+  </footer>
+
+</body>
+</html>
