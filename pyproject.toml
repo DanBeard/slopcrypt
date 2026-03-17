@@ -21,10 +21,14 @@ llama = [
 mlx = [
     "mlx-lm>=0.19.0",
 ]
+rns = [
+    "rns>=0.7.0",
+]
 
 [project.scripts]
 slopcrypt = "slopcrypt.secret:main"
 slopcrypt-encode = "slopcrypt.encode:main"
+sloplink = "slopcrypt.sloplink.__main__:main"
 
 [build-system]
 requires = ["hatchling"]
