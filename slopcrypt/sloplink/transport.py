@@ -290,6 +290,10 @@ class IRCTransport(ChatTransport):
 
     def _handle_irc_line(self, line: str) -> None:
         """Process a single IRC protocol line."""
+        # Debug: log every non-trivial line
+        if "PRIVMSG" in line or "PING" in line:
+            print(f"[SlopLink IRC DBG] {line[:120]}", file=sys.stderr)
+
         # PING/PONG keepalive
         if line.startswith("PING"):
             self._irc_send("PONG" + line[4:])
