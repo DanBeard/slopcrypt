@@ -246,8 +246,8 @@ class IRCTransport(ChatTransport):
             try:
                 while self._running and self._sock:
                     ready, _, _ = select.select([self._sock], [], [], 0.5)
+                    self._check_reassembly_timeout()
                     if not ready:
-                        self._check_reassembly_timeout()
                         continue
                     data = self._sock.recv(4096)
                     if not data:
@@ -359,6 +359,11 @@ class IRCTransport(ChatTransport):
                 if now - last_time >= self.reassembly_timeout:
                     full_text = " ".join(fragments)
                     to_deliver.append(full_text)
+                    print(
+                        f"[SlopLink IRC] Delivering {len(fragments)} fragments "
+                        f"({len(full_text)} chars) from {sender}",
+                        file=sys.stderr,
+                    )
                     del self._reassembly[sender]
 
         for text in to_deliver:
