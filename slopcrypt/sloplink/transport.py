@@ -328,6 +328,12 @@ class IRCTransport(ChatTransport):
             # Only process messages from the channel (not DMs) and not from self
             if target.lower() == self.channel.lower() and sender != self.nick:
                 self._handle_channel_message(sender, message)
+            else:
+                print(
+                    f"[SlopLink IRC] Filtered message: target={target!r} "
+                    f"channel={self.channel!r} sender={sender!r} nick={self.nick!r}",
+                    file=sys.stderr,
+                )
 
     def _handle_channel_message(self, sender: str, text: str) -> None:
         """Buffer and reassemble multi-line messages from a sender."""
