@@ -368,7 +368,10 @@ class IRCTransport(ChatTransport):
 
         for text in to_deliver:
             if self._callback:
-                self._callback(text)
+                try:
+                    self._callback(text)
+                except Exception as e:
+                    print(f"[SlopLink IRC] Callback error: {e}", file=sys.stderr)
 
     def send(self, text: str) -> None:
         """Send text to the IRC channel, splitting into chunks if needed."""
