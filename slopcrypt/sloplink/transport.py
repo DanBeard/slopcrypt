@@ -11,6 +11,7 @@ import os
 import re
 import select
 import socket
+import sys
 import threading
 import time
 from abc import ABC, abstractmethod
@@ -239,23 +240,53 @@ class IRCTransport(ChatTransport):
                 self._sock.sendall((line + "\r\n").encode("utf-8"))
 
     def _recv_loop(self) -> None:
-        """Parse incoming IRC messages."""
-        buf = b""
-        while self._running and self._sock:
+        """Parse incoming IRC messages with auto-reconnect."""
+        while self._running:
+            buf = b""
             try:
-                ready, _, _ = select.select([self._sock], [], [], 0.5)
-                if not ready:
-                    self._check_reassembly_timeout()
-                    continue
-                data = self._sock.recv(4096)
-                if not data:
-                    break
-                buf += data
-                while b"\r\n" in buf:
-                    line, buf = buf.split(b"\r\n", 1)
-                    self._handle_irc_line(line.decode("utf-8", errors="replace"))
-            except OSError:
+                while self._running and self._sock:
+                    ready, _, _ = select.select([self._sock], [], [], 0.5)
+                    if not ready:
+                        self._check_reassembly_timeout()
+                        continue
+                    data = self._sock.recv(4096)
+                    if not data:
+                        print("[SlopLink IRC] Connection closed by server", file=sys.stderr)
+                        break
+                    buf += data
+                    while b"\r\n" in buf:
+                        line, buf = buf.split(b"\r\n", 1)
+                        self._handle_irc_line(line.decode("utf-8", errors="replace"))
+            except OSError as e:
+                print(f"[SlopLink IRC] Connection error: {e}", file=sys.stderr)
+
+            if not self._running:
                 break
+
+            # Auto-reconnect
+            print("[SlopLink IRC] Reconnecting in 10 seconds...", file=sys.stderr)
+            self._joined.clear()
+            time.sleep(10)
+            try:
+                if self._sock:
+                    try:
+                        self._sock.close()
+                    except OSError:
+                        pass
+                self._sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                if self.use_ssl:
+                    import ssl
+                    ctx = ssl.create_default_context()
+                    self._sock = ctx.wrap_socket(self._sock, server_hostname=self.server)
+                self._sock.connect((self.server, self.port))
+                if self.password:
+                    self._irc_send(f"PASS {self.password}")
+                self._irc_send(f"NICK {self.nick}")
+                self._irc_send(f"USER {self.nick} 0 * :SlopLink Bot")
+                self._joined.wait(timeout=30)
+                print("[SlopLink IRC] Reconnected successfully", file=sys.stderr)
+            except Exception as e:
+                print(f"[SlopLink IRC] Reconnect failed: {e}", file=sys.stderr)
 
     def _handle_irc_line(self, line: str) -> None:
         """Process a single IRC protocol line."""

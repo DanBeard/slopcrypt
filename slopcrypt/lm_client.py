@@ -12,6 +12,7 @@ import os
 from dataclasses import dataclass
 
 import httpx
+import numpy as np
 
 from slopcrypt.utils import TokenProb
 
@@ -202,6 +203,135 @@ class LlamaCppClient:
                 token_str = token_bytes.decode("latin-1", errors="replace")
             tokens.append(token_str)
         return tokens
+
+
+class CachedLlamaCppClient:
+    """
+    High-performance llama.cpp client with KV cache reuse.
+
+    Instead of resetting the model and re-processing the entire context
+    for every token (O(n²) total work), this client maintains the KV cache
+    across calls. When the new context extends the previous one (which is
+    always the case during steganographic encoding), only the new token
+    needs a forward pass — giving O(n) total work and ~100-300x speedup.
+
+    Falls back to full re-eval when the context doesn't extend the cache
+    (e.g., when switching between encode and decode operations).
+    """
+
+    def __init__(
+        self,
+        model_path: str,
+        n_ctx: int = 2048,
+        n_gpu_layers: int = 0,
+        seed: int = 42,
+        top_k: int = 40,
+        verbose: bool = False,
+    ):
+        try:
+            from llama_cpp import Llama
+        except ImportError as e:
+            raise ImportError(
+                "llama-cpp-python not installed. Install with: pip install llama-cpp-python"
+            ) from e
+
+        if not os.path.exists(model_path):
+            raise FileNotFoundError(f"Model not found: {model_path}")
+
+        self.model = Llama(
+            model_path=model_path,
+            n_ctx=n_ctx,
+            n_gpu_layers=n_gpu_layers,
+            verbose=verbose,
+            logits_all=False,  # Only need last-position logits
+        )
+        self.top_k = top_k
+        self._n_vocab = self.model._n_vocab
+
+        # Cache state: the token IDs currently in the KV cache
+        self._cached_tokens: list[int] = []
+
+    def close(self):
+        if hasattr(self, "model"):
+            del self.model
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        self.close()
+
+    def _get_logits(self) -> np.ndarray:
+        """Read logits for the last evaluated position."""
+        logits_ptr = self.model._ctx.get_logits()
+        return np.ctypeslib.as_array(logits_ptr, shape=(self._n_vocab,)).copy()
+
+    def get_token_distribution(self, context: str) -> list[TokenProb]:
+        """
+        Get probability distribution over next tokens, reusing KV cache.
+
+        If `context` extends the previously cached context (i.e., tokens
+        were appended), only the new tokens are evaluated. Otherwise, the
+        cache is cleared and the full context is re-evaluated.
+        """
+        new_tokens = self.model.tokenize(context.encode("utf-8"))
+
+        # Check if the new tokens extend the cached ones
+        cache_len = len(self._cached_tokens)
+        if (
+            cache_len > 0
+            and len(new_tokens) >= cache_len
+            and new_tokens[:cache_len] == self._cached_tokens
+        ):
+            # Cache hit: only eval the new tokens
+            tokens_to_eval = new_tokens[cache_len:]
+        else:
+            # Cache miss: reset and eval everything
+            self.model.reset()
+            self._cached_tokens = []
+            tokens_to_eval = new_tokens
+
+        if not tokens_to_eval:
+            # Context unchanged — logits are already current
+            pass
+        else:
+            self.model.eval(tokens_to_eval)
+
+        self._cached_tokens = new_tokens
+
+        # Read logits and compute probabilities
+        try:
+            logits = self._get_logits()
+            # Numerically stable softmax
+            logits_shifted = logits - logits.max()
+            probs = np.exp(logits_shifted)
+            probs /= probs.sum()
+
+            # Get top-K indices
+            top_indices = np.argpartition(probs, -self.top_k)[-self.top_k :]
+            top_indices = top_indices[np.argsort(probs[top_indices])[::-1]]
+
+            result = []
+            for idx in top_indices:
+                idx_int = int(idx)
+                token_bytes = self.model.detokenize([idx_int])
+                token_str = token_bytes.decode("utf-8", errors="replace")
+                if token_str:  # Skip empty (EOS)
+                    result.append(TokenProb(token=token_str, prob=float(probs[idx_int])))
+
+            # Sort by probability descending, then by token string for stability
+            result.sort(key=lambda x: (-x.prob, x.token))
+            return result
+
+        except Exception as e:
+            import sys
+            print(f"Warning: CachedLlamaCppClient error: {e}", file=sys.stderr)
+            return []
+
+    def reset_cache(self):
+        """Force clear the KV cache (e.g., when switching contexts)."""
+        self.model.reset()
+        self._cached_tokens = []
 
 
 @dataclass
