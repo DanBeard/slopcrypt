@@ -344,21 +344,35 @@ def decode(
     token_indices: list[int] = []
 
     while remaining:
-        trie, top_k = _get_trie(client, context, k)
+        top_k = _get_top_k(client, context, k)
         if not top_k:
             context += remaining[0]
             remaining = remaining[1:]
             continue
 
-        # Match using trie: O(m) where m is token length
-        idx, length = trie.match(remaining)
-        if idx >= 0:
-            token_indices.append(idx)
-            context += remaining[:length]
-            remaining = remaining[length:]
+        # Extract the next word from remaining text.
+        # Tokens are " word" format, so find the next space-delimited word.
+        # remaining starts with " word ..." or " word" (at end)
+        space_pos = remaining.find(" ", 1)  # find space after the leading space
+        if space_pos == -1:
+            next_token = remaining  # last token
         else:
-            context += remaining[0]
-            remaining = remaining[1:]
+            next_token = remaining[:space_pos]
+
+        # Find this token in top-K
+        matched = False
+        for idx, tp in enumerate(top_k):
+            if tp.token == next_token:
+                token_indices.append(idx)
+                context += next_token
+                remaining = remaining[len(next_token):]
+                matched = True
+                break
+
+        if not matched:
+            # Token not in top-K (could be suffix/preamble sampled token)
+            context += next_token
+            remaining = remaining[len(next_token):]
 
     # Find knock sequence
     knock_len = len(knock)

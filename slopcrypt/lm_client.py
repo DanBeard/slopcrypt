@@ -745,38 +745,9 @@ class MarkovClient:
             probs.sort(key=lambda x: (-x.prob, x.token))
             self._distributions[state] = probs
 
-        # Third pass: compute global prefix-unsafe token set using a trie.
-        # A token is "unsafe" if any other token in the full vocabulary
-        # starts with it. Since smoothing blends the same unigram words
-        # into every state, the unsafe set is the same for all states.
-        all_vocab = {t.token for probs in self._distributions.values() for t in probs}
-        # Build trie to find prefixes efficiently
-        _TERM = None  # terminal marker (can't collide with str chars)
-        trie: dict = {}
-        for token in all_vocab:
-            node = trie
-            for ch in token:
-                if ch not in node:
-                    node[ch] = {}
-                node = node[ch]
-            node[_TERM] = True
-
-        unsafe_tokens: set[str] = set()
-        for token in all_vocab:
-            node = trie
-            for ch in token:
-                node = node[ch]
-            # If terminal node has children besides the terminal marker, it's a prefix
-            if len(node) > 1:
-                unsafe_tokens.add(token)
-
-        # Filter unsafe tokens from all distributions
-        if unsafe_tokens:
-            for state in self._distributions:
-                self._distributions[state] = [
-                    t for t in self._distributions[state]
-                    if t.token not in unsafe_tokens
-                ]
+        # Note: prefix filtering is NOT done here. The lite codec
+        # (sloplink/codec.py) handles word-boundary matching during
+        # decode, which avoids prefix ambiguity without removing tokens.
 
     @classmethod
     def from_corpus(
