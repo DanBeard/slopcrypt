@@ -751,20 +751,23 @@ class MarkovClient:
         # into every state, the unsafe set is the same for all states.
         all_vocab = {t.token for probs in self._distributions.values() for t in probs}
         # Build trie to find prefixes efficiently
+        _TERM = None  # terminal marker (can't collide with str chars)
         trie: dict = {}
         for token in all_vocab:
             node = trie
             for ch in token:
-                node = node.setdefault(ch, {})
-            node["$"] = True  # terminal marker
+                if ch not in node:
+                    node[ch] = {}
+                node = node[ch]
+            node[_TERM] = True
 
         unsafe_tokens: set[str] = set()
         for token in all_vocab:
             node = trie
             for ch in token:
                 node = node[ch]
-            # If this terminal node has children beyond "$", it's a prefix
-            if len(node) > 1 or "$" not in node:
+            # If terminal node has children besides the terminal marker, it's a prefix
+            if len(node) > 1:
                 unsafe_tokens.add(token)
 
         # Filter unsafe tokens from all distributions
