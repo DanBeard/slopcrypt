@@ -24,6 +24,9 @@ mlx = [
 rns = [
     "rns>=0.7.0",
 ]
+markov = [
+    "markovify>=0.9.0",
+]
 
 [project.scripts]
 slopcrypt = "slopcrypt.secret:main"

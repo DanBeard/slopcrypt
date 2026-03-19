@@ -647,6 +647,206 @@ class MockLMClient:
         pass
 
 
+class MarkovClient:
+    """
+    Markov chain client for ultra-fast steganographic encoding.
+
+    Uses markovify to build an N-gram transition model from a text corpus.
+    Each call to get_token_distribution() is a single dict lookup + normalize,
+    giving ~100,000+ calls/sec on any hardware — no GPU, no C extensions.
+
+    Both peers must share the same trained model (JSON file) for identical
+    probability distributions.
+
+    Usage:
+        # Train from a corpus
+        client = MarkovClient.from_corpus("garden_forum_posts.txt", state_size=2)
+        client.save("garden.markov.json")
+
+        # Load for encode/decode
+        client = MarkovClient.from_file("garden.markov.json")
+        dist = client.get_token_distribution("growing tomatoes in")
+    """
+
+    def __init__(self, model, state_size: int = 2, smoothing: float = 0.1, top_k: int = 64):
+        """
+        Args:
+            model: A markovify.Text model (uncompiled).
+            state_size: N-gram size used for context lookups.
+            smoothing: Weight given to the global unigram distribution
+                      (0.0 = pure Markov, 1.0 = pure unigram). This
+                      ensures every state has a rich distribution by
+                      blending with a background model.
+            top_k: Only keep the top-K tokens per state (saves memory
+                  and speeds up precompute for large corpora).
+        """
+        self._model = model
+        self._state_size = state_size
+        self._smoothing = smoothing
+        self._top_k = top_k
+        # Pre-compute normalized distributions for speed
+        self._distributions: dict[tuple, list[TokenProb]] = {}
+        self._unigram_top: list[tuple[str, float]] = []
+        self._precompute()
+
+    def _precompute(self) -> None:
+        """Convert raw counts to smoothed, normalized TokenProb lists."""
+        chain_model = self._model.chain.model
+
+        # First pass: build global unigram counts
+        word_counts: dict[str, int] = {}
+        for state, successors in chain_model.items():
+            for word, count in successors.items():
+                if word is None or not isinstance(word, str):
+                    continue
+                word_counts[word] = word_counts.get(word, 0) + count
+
+        total_unigram = sum(word_counts.values())
+
+        # Keep only top unigram words for efficiency (the long tail
+        # contributes negligible probability after smoothing)
+        top_unigram_n = self._top_k * 4
+        sorted_words = sorted(word_counts.items(), key=lambda x: -x[1])[:top_unigram_n]
+        unigram_total = sum(c for _, c in sorted_words)
+        self._unigram_top = [
+            (w, c / unigram_total) for w, c in sorted_words
+        ]
+
+        # Second pass: blend each state's distribution with unigram
+        alpha = self._smoothing
+        for state, successors in chain_model.items():
+            state_total = sum(
+                c for w, c in successors.items()
+                if w is not None and isinstance(w, str)
+            )
+            if state_total == 0:
+                continue
+
+            # Merge state distribution with top unigram background
+            merged: dict[str, float] = {}
+
+            # State-specific probabilities (weight: 1 - alpha)
+            for word, count in successors.items():
+                if word is None or not isinstance(word, str):
+                    continue
+                merged[word] = (1 - alpha) * (count / state_total)
+
+            # Unigram background (weight: alpha)
+            for word, prob in self._unigram_top:
+                merged[word] = merged.get(word, 0) + alpha * prob
+
+            # Keep only top-K, normalize, convert to TokenProb
+            top_items = sorted(merged.items(), key=lambda x: -x[1])[:self._top_k]
+            total = sum(p for _, p in top_items)
+            probs = [
+                TokenProb(token=" " + w, prob=p / total)
+                for w, p in top_items
+            ]
+            probs.sort(key=lambda x: (-x.prob, x.token))
+
+            # Pre-filter prefix-unsafe tokens: remove any token that is
+            # a prefix of another token in the distribution. This is done
+            # once at init instead of per-call for speed.
+            all_token_strs = {t.token for t in probs}
+            safe_probs = [
+                t for t in probs
+                if not any(o.startswith(t.token) and o != t.token for o in all_token_strs)
+            ]
+
+            self._distributions[state] = safe_probs
+
+    @classmethod
+    def from_corpus(
+        cls,
+        text: str,
+        state_size: int = 2,
+        well_formed: bool = False,
+        smoothing: float = 0.1,
+    ) -> "MarkovClient":
+        """
+        Train a Markov chain from a text corpus.
+
+        Args:
+            text: The training corpus as a single string.
+            state_size: N-gram context size (2 = bigram, 3 = trigram).
+            well_formed: If False, disables markovify's sentence validation
+                        for more diverse output (better for steganography).
+            smoothing: Blend weight with global unigram distribution (0-1).
+        """
+        try:
+            import markovify
+        except ImportError as e:
+            raise ImportError(
+                "markovify not installed. Install with: pip install markovify"
+            ) from e
+
+        model = markovify.Text(text, state_size=state_size, well_formed=well_formed)
+        return cls(model, state_size=state_size, smoothing=smoothing)
+
+    @classmethod
+    def from_file(cls, path: str) -> "MarkovClient":
+        """Load a trained Markov chain from a JSON file."""
+        try:
+            import markovify
+        except ImportError as e:
+            raise ImportError(
+                "markovify not installed. Install with: pip install markovify"
+            ) from e
+
+        with open(path) as f:
+            json_str = f.read()
+        model = markovify.Text.from_json(json_str)
+        state_size = len(next(iter(model.chain.model.keys())))
+        return cls(model, state_size=state_size)
+
+    def save(self, path: str) -> None:
+        """Save the trained model to a JSON file."""
+        with open(path, "w") as f:
+            f.write(self._model.to_json())
+
+    def get_token_distribution(self, context: str) -> list[TokenProb]:
+        """
+        Get probability distribution over next tokens given context.
+
+        Extracts the last `state_size` words from context and looks up
+        the transition probabilities. Falls back to shorter contexts
+        if the full state isn't found.
+        """
+        words = context.split()
+
+        # Try full state, then progressively shorter
+        for n in range(self._state_size, 0, -1):
+            if len(words) >= n:
+                state = tuple(words[-n:])
+                # Pad to state_size with markovify's BEGIN marker if needed
+                if n < self._state_size:
+                    state = ("___BEGIN__",) * (self._state_size - n) + state
+                dist = self._distributions.get(state)
+                if dist:
+                    return dist
+
+        # Try BEGIN state (start of sentence)
+        begin_state = ("___BEGIN__",) * self._state_size
+        dist = self._distributions.get(begin_state)
+        if dist:
+            return dist
+
+        # Absolute fallback: return most common state's distribution
+        if self._distributions:
+            return next(iter(self._distributions.values()))
+
+        return []
+
+    def close(self):
+        pass
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        pass
+
+
 class FixedDistributionClient:
     """
     LM client that returns a fixed, deterministic distribution.
