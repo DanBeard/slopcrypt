@@ -699,6 +699,8 @@ class MarkovClient:
             for word, count in successors.items():
                 if word is None or not isinstance(word, str):
                     continue
+                if word.startswith("___"):
+                    continue
                 word_counts[word] = word_counts.get(word, 0) + count
 
         total_unigram = sum(word_counts.values())
@@ -728,6 +730,9 @@ class MarkovClient:
             # State-specific probabilities (weight: 1 - alpha)
             for word, count in successors.items():
                 if word is None or not isinstance(word, str):
+                    continue
+                # Skip markovify internal markers
+                if word.startswith("___"):
                     continue
                 merged[word] = (1 - alpha) * (count / state_total)
 
