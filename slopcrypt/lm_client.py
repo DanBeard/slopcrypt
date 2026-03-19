@@ -743,17 +743,37 @@ class MarkovClient:
                 for w, p in top_items
             ]
             probs.sort(key=lambda x: (-x.prob, x.token))
+            self._distributions[state] = probs
 
-            # Pre-filter prefix-unsafe tokens: remove any token that is
-            # a prefix of another token in the distribution. This is done
-            # once at init instead of per-call for speed.
-            all_token_strs = {t.token for t in probs}
-            safe_probs = [
-                t for t in probs
-                if not any(o.startswith(t.token) and o != t.token for o in all_token_strs)
-            ]
+        # Third pass: compute global prefix-unsafe token set using a trie.
+        # A token is "unsafe" if any other token in the full vocabulary
+        # starts with it. Since smoothing blends the same unigram words
+        # into every state, the unsafe set is the same for all states.
+        all_vocab = {t.token for probs in self._distributions.values() for t in probs}
+        # Build trie to find prefixes efficiently
+        trie: dict = {}
+        for token in all_vocab:
+            node = trie
+            for ch in token:
+                node = node.setdefault(ch, {})
+            node["$"] = True  # terminal marker
 
-            self._distributions[state] = safe_probs
+        unsafe_tokens: set[str] = set()
+        for token in all_vocab:
+            node = trie
+            for ch in token:
+                node = node[ch]
+            # If this terminal node has children beyond "$", it's a prefix
+            if len(node) > 1 or "$" not in node:
+                unsafe_tokens.add(token)
+
+        # Filter unsafe tokens from all distributions
+        if unsafe_tokens:
+            for state in self._distributions:
+                self._distributions[state] = [
+                    t for t in self._distributions[state]
+                    if t.token not in unsafe_tokens
+                ]
 
     @classmethod
     def from_corpus(
