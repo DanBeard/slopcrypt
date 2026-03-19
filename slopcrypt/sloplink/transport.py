@@ -160,15 +160,16 @@ class UnixSocketTransport(ChatTransport):
 
 class IRCTransport(ChatTransport):
     """
-    Transport over IRC.
+    Transport over IRC with debounce and rate limiting.
 
-    Sends and receives messages in an IRC channel. Long messages are
-    split across multiple lines; the receiver buffers and reassembles
-    consecutive messages from the same sender.
+    Outbound: messages are queued, debounced (concatenated if sent in
+    quick succession), split into IRC-safe chunks, and rate-limited.
+    Inbound: consecutive messages from the same sender are reassembled.
     """
 
-    # Max bytes per PRIVMSG payload (conservative, accounts for header overhead)
-    MAX_MSG_LEN = 400
+    MAX_MSG_LEN = 400     # Usable bytes per PRIVMSG
+    SEND_INTERVAL = 2.0   # Seconds between IRC messages (server limit)
+    SEND_BURST = 4        # Messages allowed in quick burst
 
     def __init__(
         self,
@@ -178,7 +179,8 @@ class IRCTransport(ChatTransport):
         port: int = 6667,
         use_ssl: bool = False,
         password: str | None = None,
-        reassembly_timeout: float = 2.0,
+        reassembly_timeout: float = 3.0,
+        debounce_delay: float = 1.0,
     ):
         """
         Args:
@@ -188,7 +190,8 @@ class IRCTransport(ChatTransport):
             port: Server port.
             use_ssl: Use SSL/TLS.
             password: Server password (optional).
-            reassembly_timeout: Seconds to wait for more fragments.
+            reassembly_timeout: Seconds to wait for more fragments before delivering.
+            debounce_delay: Seconds to wait for more outbound messages before sending.
         """
         self.server = server
         self.channel = channel if channel.startswith("#") else f"#{channel}"
@@ -197,17 +200,27 @@ class IRCTransport(ChatTransport):
         self.use_ssl = use_ssl
         self.password = password
         self.reassembly_timeout = reassembly_timeout
+        self.debounce_delay = debounce_delay
 
         self._callback: Callable[[str], None] | None = None
         self._sock: socket.socket | None = None
         self._running = False
         self._recv_thread: threading.Thread | None = None
+        self._send_thread: threading.Thread | None = None
         self._lock = threading.Lock()
         self._joined = threading.Event()
 
         # Reassembly buffer: {nick: (fragments, last_time)}
         self._reassembly: dict[str, tuple[list[str], float]] = {}
         self._reassembly_lock = threading.Lock()
+
+        # Outbound send queue with debounce
+        self._send_queue: list[str] = []
+        self._send_queue_lock = threading.Lock()
+        self._send_event = threading.Event()
+
+        # Rate limit tracking
+        self._send_times: list[float] = []
 
     def on_receive(self, callback: Callable[[str], None]) -> None:
         self._callback = callback
@@ -229,6 +242,10 @@ class IRCTransport(ChatTransport):
 
         self._recv_thread = threading.Thread(target=self._recv_loop, daemon=True)
         self._recv_thread.start()
+
+        # Start send queue processor
+        self._send_thread = threading.Thread(target=self._send_loop, daemon=True)
+        self._send_thread.start()
 
         # Wait for join confirmation (with timeout)
         self._joined.wait(timeout=30)
@@ -374,32 +391,76 @@ class IRCTransport(ChatTransport):
                     print(f"[SlopLink IRC] Callback error: {e}", file=sys.stderr)
 
     def send(self, text: str) -> None:
-        """Send text to the IRC channel, splitting into chunks if needed."""
-        # Collapse newlines for IRC (single-line protocol)
-        flat = text.replace("\n", " ").replace("\r", "")
+        """Queue text for sending. Messages queued within debounce_delay
+        are concatenated before being split and sent."""
+        flat = text.replace("\n", " ").replace("\r", "").strip()
+        if not flat:
+            return
+        with self._send_queue_lock:
+            self._send_queue.append(flat)
+        self._send_event.set()
 
-        # Split into IRC-safe chunks
-        chunks = []
-        while flat:
-            if len(flat.encode("utf-8")) <= self.MAX_MSG_LEN:
-                chunks.append(flat)
+    def _send_loop(self) -> None:
+        """Process the send queue with debounce and rate limiting."""
+        while self._running:
+            # Wait for something to send
+            self._send_event.wait()
+            self._send_event.clear()
+
+            if not self._running:
                 break
-            # Find a split point (prefer space boundary)
+
+            # Debounce: wait a bit for more messages to arrive
+            time.sleep(self.debounce_delay)
+
+            # Grab everything queued
+            with self._send_queue_lock:
+                if not self._send_queue:
+                    continue
+                # Concatenate all queued messages with a space separator
+                combined = " ".join(self._send_queue)
+                self._send_queue.clear()
+
+            # Split into IRC-safe chunks
+            chunks = self._split_into_chunks(combined)
+
+            # Send with rate limiting
+            for chunk in chunks:
+                self._wait_rate_limit()
+                self._irc_send(f"PRIVMSG {self.channel} :{chunk}")
+                self._send_times.append(time.time())
+
+    def _split_into_chunks(self, text: str) -> list[str]:
+        """Split text into IRC-safe chunks, preferring word boundaries."""
+        chunks = []
+        while text:
+            if len(text.encode("utf-8")) <= self.MAX_MSG_LEN:
+                chunks.append(text)
+                break
             split_at = self.MAX_MSG_LEN
-            encoded = flat[:split_at].encode("utf-8")
+            encoded = text[:split_at].encode("utf-8")
             while len(encoded) > self.MAX_MSG_LEN and split_at > 100:
                 split_at -= 1
-                encoded = flat[:split_at].encode("utf-8")
-            # Try to split at a space
-            space_idx = flat.rfind(" ", 0, split_at)
+                encoded = text[:split_at].encode("utf-8")
+            # Prefer splitting at a word boundary
+            space_idx = text.rfind(" ", 0, split_at)
             if space_idx > split_at // 2:
                 split_at = space_idx + 1
-            chunks.append(flat[:split_at])
-            flat = flat[split_at:]
+            chunks.append(text[:split_at])
+            text = text[split_at:]
+        return chunks
 
-        for chunk in chunks:
-            self._irc_send(f"PRIVMSG {self.channel} :{chunk}")
-            time.sleep(0.3)  # Rate limit
+    def _wait_rate_limit(self) -> None:
+        """Wait if needed to stay within IRC rate limits."""
+        now = time.time()
+        # Prune old send times
+        self._send_times = [t for t in self._send_times if now - t < self.SEND_INTERVAL * self.SEND_BURST]
+        # If we've sent SEND_BURST messages recently, wait
+        if len(self._send_times) >= self.SEND_BURST:
+            oldest = self._send_times[0]
+            wait = self.SEND_INTERVAL - (now - oldest)
+            if wait > 0:
+                time.sleep(wait)
 
     def disconnect(self) -> None:
         self._running = False

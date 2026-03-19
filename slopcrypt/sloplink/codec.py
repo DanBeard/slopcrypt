@@ -209,6 +209,8 @@ def encode(
     payload_key: bytes | None = None,
     preamble_tokens: int = 3,
     suffix_tokens: int = 2,
+    finish_sentence: bool = True,
+    max_suffix_tokens: int = 40,
 ) -> str:
     """
     Encode binary data into cover text using a Markov chain.
@@ -221,7 +223,9 @@ def encode(
         knock: Token index sequence for framing (auto-generated if None).
         payload_key: AES-256-GCM key for encryption (random if None).
         preamble_tokens: Natural tokens before the knock.
-        suffix_tokens: Natural tokens after the payload.
+        suffix_tokens: Minimum natural tokens after the payload.
+        finish_sentence: Continue suffix until sentence-ending punctuation.
+        max_suffix_tokens: Hard cap on suffix length (prevents runaway).
 
     Returns:
         Generated cover text (without prompt prefix).
@@ -297,14 +301,28 @@ def encode(
         context += top_k[index].token
         bit_idx += bits_per_token
 
-    # Phase 4: Suffix (natural sampling)
-    for _ in range(suffix_tokens):
+    # Phase 4: Suffix — generate natural trailing text.
+    # Continue at least suffix_tokens, then keep going until we hit
+    # sentence-ending punctuation (. ! ?) for readable cover text.
+    suffix_count = 0
+    hit_sentence_end = False
+    while suffix_count < max_suffix_tokens:
         top_k = _top_k(context)
         if not top_k:
             break
         token = _sample(top_k)
         tokens.append(token)
         context += token
+        suffix_count += 1
+
+        # Check for sentence-ending punctuation
+        if suffix_count >= suffix_tokens and finish_sentence:
+            text_so_far = "".join(tokens)
+            if any(text_so_far.rstrip().endswith(p) for p in (".", "!", "?")):
+                hit_sentence_end = True
+                break
+        elif suffix_count >= suffix_tokens and not finish_sentence:
+            break
 
     return "".join(tokens)
 
